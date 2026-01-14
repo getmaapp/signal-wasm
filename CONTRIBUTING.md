@@ -1,6 +1,6 @@
-# Contributing to libsignal-wasm
+# Contributing to @getmaapp/signal-wasm
 
-Welcome! We appreciate your interest in contributing to `@getmaapp/libsignal-wasm`. This document outlines the standards and behaviours expected for this project.
+Welcome! We appreciate your interest in contributing to `@getmaapp/signal-wasm`. This document outlines the standards and behaviours expected for this project.
 
 ## 1. Language & Spelling
 
