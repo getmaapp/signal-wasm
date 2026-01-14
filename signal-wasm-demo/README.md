@@ -1,6 +1,6 @@
 # Signal WASM Demo App
 
-A React 19 / Vite application demonstrating the capabilities of `@thecannabisapp/libsignal-wasm`.
+A React 19 / Vite application demonstrating the capabilities of `@getmaapp/signal-wasm`.
 
 ## Features Demonstrated
 
@@ -16,7 +16,7 @@ A React 19 / Vite application demonstrating the capabilities of `@thecannabisapp
 ## Architecture
 
 - **React 19**: Modern UI with `useEffect` and `useState` for state management.
-- **WASM Bridge**: Direct integration with the `@thecannabisapp/libsignal-wasm` package.
+- **WASM Bridge**: Direct integration with the `@getmaapp/signal-wasm` package.
 - **IndexedDB**: Persistent storage via the `idb` library with automated schema migrations.
 - **Vite**: Ultra-fast build tool with WASM support.
 

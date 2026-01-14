@@ -1,6 +1,6 @@
 # Contributing to libsignal-wasm
 
-Welcome! We appreciate your interest in contributing to `@thecannabisapp/libsignal-wasm`. This document outlines the standards and behaviours expected for this project.
+Welcome! We appreciate your interest in contributing to `@getmaapp/libsignal-wasm`. This document outlines the standards and behaviours expected for this project.
 
 ## 1. Language & Spelling
 

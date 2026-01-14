@@ -1,4 +1,4 @@
-# @thecannabisapp/libsignal-wasm
+# @getmaapp/libsignal-wasm
 
 > Signal Protocol compiled to WebAssembly for browser-based E2EE messaging
 
@@ -18,13 +18,13 @@
 ## Installation
 
 ```bash
-npm install @thecannabisapp/libsignal-wasm
+npm install @getmaapp/libsignal-wasm
 ```
 
 ## Quick Start
 
 ```typescript
-import init, { SignalClient } from '@thecannabisapp/libsignal-wasm';
+import init, { SignalClient } from '@getmaapp/libsignal-wasm';
 
 // Initialise WASM module
 await init();
