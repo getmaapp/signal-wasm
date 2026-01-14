@@ -29,16 +29,20 @@ body {
 
 .app {
   width: 100%;
-  max-width: 1400px; /* Increased from 1200px for better monitor usage */
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 2rem;
+  height: 100vh;
+  padding: 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 header {
   text-align: center;
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 header h1 {
@@ -58,9 +62,10 @@ header p {
 
 main {
   display: grid;
-  grid-template-columns: minmax(300px, 350px) 1fr;
+  grid-template-columns: minmax(320px, 380px) 1fr;
   gap: 2rem;
-  align-items: start; /* Prevent sidebar from stretching if logs are long */
+  flex: 1;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {
@@ -74,6 +79,10 @@ section {
   border-radius: 12px;
   padding: 1.5rem;
   border: 1px solid var(--border);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 section h2 {
@@ -127,8 +136,13 @@ button.secondary:hover:not(:disabled) {
   background: var(--border);
 }
 
+.controls {
+  overflow-y: auto;
+  padding-right: 0.5rem; /* Space for scrollbar */
+}
+
 .log-panel {
-  max-height: 70vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -197,11 +211,11 @@ button.secondary:hover:not(:disabled) {
 
 footer {
   text-align: center;
-  margin-top: 2rem;
-  padding-top: 1.5rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 /* Scrollbar styling */

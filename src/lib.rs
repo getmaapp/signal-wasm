@@ -15,8 +15,6 @@
 #![deny(unsafe_code)]
 #![warn(clippy::unwrap_used)]
 
-use std::time::SystemTime;
-
 use wasm_bindgen::prelude::*;
 use js_sys::Array;
 use zeroize::Zeroizing;
@@ -29,7 +27,7 @@ use libsignal_protocol::{
     // Addresses
     ProtocolAddress, DeviceId,
     // PreKeys
-    PreKeyRecord, PreKeyBundle, SignedPreKeyRecord, KyberPreKeyRecord, KyberPreKeyId,
+    PreKeyRecord, PreKeyBundle, SignedPreKeyRecord, KyberPreKeyRecord,
     // Sessions
     SessionRecord,
     // Messages
@@ -142,6 +140,7 @@ impl WasmIdentityKeyPair {
 pub struct WasmPreKey {
     id: u32,
     public_key: Vec<u8>,
+    record: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -155,6 +154,11 @@ impl WasmPreKey {
     pub fn public_key(&self) -> Vec<u8> {
         self.public_key.clone()
     }
+    
+    #[wasm_bindgen(getter)]
+    pub fn record(&self) -> Vec<u8> {
+        self.record.clone()
+    }
 }
 
 /// A signed PreKey for upload to the server
@@ -164,6 +168,7 @@ pub struct WasmSignedPreKey {
     public_key: Vec<u8>,
     signature: Vec<u8>,
     timestamp: u64,
+    record: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -187,6 +192,11 @@ impl WasmSignedPreKey {
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
+    
+    #[wasm_bindgen(getter)]
+    pub fn record(&self) -> Vec<u8> {
+        self.record.clone()
+    }
 }
 
 /// A Kyber (post-quantum) PreKey for upload to the server
@@ -196,6 +206,7 @@ pub struct WasmKyberPreKey {
     public_key: Vec<u8>,
     signature: Vec<u8>,
     timestamp: u64,
+    record: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -218,6 +229,11 @@ impl WasmKyberPreKey {
     #[wasm_bindgen(getter)]
     pub fn timestamp(&self) -> u64 {
         self.timestamp
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn record(&self) -> Vec<u8> {
+        self.record.clone()
     }
 }
 
@@ -442,6 +458,7 @@ impl SignalClient {
             
             let key_pair = KeyPair::generate(&mut rng);
             let prekey_record = PreKeyRecord::new(id.into(), &key_pair);
+            let serialized = prekey_record.serialize().map_err(to_js_error)?;
             
             futures::executor::block_on(
                 self.prekey_store.save_pre_key(id.into(), &prekey_record)
@@ -450,6 +467,7 @@ impl SignalClient {
             let wasm_prekey = WasmPreKey {
                 id,
                 public_key: key_pair.public_key.serialize().to_vec(),
+                record: serialized,
             };
             result.push(&JsValue::from(wasm_prekey));
         }
@@ -478,6 +496,7 @@ impl SignalClient {
             &key_pair,
             &signature,
         );
+        let serialized = signed_prekey_record.serialize().map_err(to_js_error)?;
         
         futures::executor::block_on(
             self.signed_prekey_store.save_signed_pre_key(id.into(), &signed_prekey_record)
@@ -488,6 +507,7 @@ impl SignalClient {
             public_key: key_pair.public_key.serialize().to_vec(),
             signature: signature.to_vec(),
             timestamp: timestamp.epoch_millis(),
+            record: serialized,
         })
     }
     
@@ -497,25 +517,24 @@ impl SignalClient {
     
     /// Generate a Kyber PreKey for post-quantum security.
     /// Uses Kyber1024 (Signal production default).
-    /// NOTE: Manual implementation because KyberPreKeyRecord::generate has a bug
-    /// (OsRng.unwrap_err()) that panics in WASM.
     #[wasm_bindgen]
     pub fn generate_kyber_prekey(&mut self) -> Result<WasmKyberPreKey, JsValue> {
         let id = self.next_kyber_prekey_id;
         self.next_kyber_prekey_id = self.next_kyber_prekey_id.checked_add(1)
             .ok_or_else(|| JsValue::from_str("Kyber PreKey ID overflow"))?;
         
-        // Use standard library generation (now that OsRng is fixed)
-        // Note: generates randomness internally using OsRng
-        let kyber_record = KyberPreKeyRecord::generate(
-            kem::KeyType::Kyber1024,
-            KyberPreKeyId::from(id),
-            self.identity_key_pair.private_key()
-        ).map_err(to_js_error)?;
+        // Generate Kyber keypair with WASM-compatible RNG (Web Crypto API)
+        // Note: KyberPreKeyRecord::generate uses OsRng internally which panics in WASM
+        let mut rng = rand::rng();
+        let key_pair = kem::KeyPair::generate(kem::KeyType::Kyber1024, &mut rng);
+        let signature = self.identity_key_pair.private_key()
+            .calculate_signature(&key_pair.public_key.serialize(), &mut rng)
+            .map_err(to_js_error)?;
+        let timestamp = now_timestamp();
+        let kyber_record = KyberPreKeyRecord::new(id.into(), timestamp, &key_pair, &signature);
+        let serialized = kyber_record.serialize().map_err(to_js_error)?;
         
-        let timestamp = kyber_record.timestamp().map_err(to_js_error)?;
-        let public_key = kyber_record.public_key().map_err(to_js_error)?.serialize().to_vec();
-        let signature = kyber_record.signature().map_err(to_js_error)?.to_vec();
+        let public_key = key_pair.public_key.serialize().to_vec();
         
         futures::executor::block_on(
             self.kyber_prekey_store.save_kyber_pre_key(id.into(), &kyber_record)
@@ -524,8 +543,9 @@ impl SignalClient {
         Ok(WasmKyberPreKey {
             id,
             public_key,
-            signature,
+            signature: signature.to_vec(),
             timestamp: timestamp.epoch_millis(),
+            record: serialized,
         })
     }
     
@@ -595,7 +615,7 @@ impl SignalClient {
             &mut self.session_store,
             &mut self.identity_store,
             &bundle,
-            SystemTime::now(),
+            std::time::UNIX_EPOCH + std::time::Duration::from_millis(js_sys::Date::now() as u64),
             &mut rng,
         ).await.map_err(to_js_error)?;
         
@@ -648,7 +668,7 @@ impl SignalClient {
             &address,
             &mut self.session_store,
             &mut self.identity_store,
-            SystemTime::now(),
+            std::time::UNIX_EPOCH + std::time::Duration::from_millis(js_sys::Date::now() as u64),
             &mut rng,
         ).await.map_err(to_js_error)?;
         
@@ -873,6 +893,39 @@ impl SignalClient {
         let address = ProtocolAddress::new(contact_uuid, dev_id);
         let session = SessionRecord::deserialize(&session_bytes).map_err(to_js_error)?;
         self.session_store.store_session(&address, &session).await.map_err(to_js_error)?;
+        Ok(())
+    }
+
+    /// Import a PreKey.
+    #[wasm_bindgen]
+    pub async fn import_pre_key(&mut self, id: u32, record_bytes: Vec<u8>) -> Result<(), JsValue> {
+        let record = PreKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
+        if u32::from(record.id().map_err(to_js_error)?) != id {
+             return Err(JsValue::from_str("PreKey ID mismatch"));
+        }
+        self.prekey_store.save_pre_key(id.into(), &record).await.map_err(to_js_error)?;
+        Ok(())
+    }
+
+    /// Import a Signed PreKey.
+    #[wasm_bindgen]
+    pub async fn import_signed_pre_key(&mut self, id: u32, record_bytes: Vec<u8>) -> Result<(), JsValue> {
+        let record = SignedPreKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
+        if u32::from(record.id().map_err(to_js_error)?) != id {
+            return Err(JsValue::from_str("Signed PreKey ID mismatch"));
+        }
+        self.signed_prekey_store.save_signed_pre_key(id.into(), &record).await.map_err(to_js_error)?;
+        Ok(())
+    }
+
+    /// Import a Kyber PreKey.
+    #[wasm_bindgen]
+    pub async fn import_kyber_pre_key(&mut self, id: u32, record_bytes: Vec<u8>) -> Result<(), JsValue> {
+        let record = KyberPreKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
+        if u32::from(record.id().map_err(to_js_error)?) != id {
+            return Err(JsValue::from_str("Kyber PreKey ID mismatch"));
+        }
+        self.kyber_prekey_store.save_kyber_pre_key(id.into(), &record).await.map_err(to_js_error)?;
         Ok(())
     }
     

@@ -1,3 +1,15 @@
+import init, {
+  generate_random_bytes,
+  generate_uuid,
+  message_type_prekey,
+  message_type_signal,
+  SignalClient,
+  uuid_to_string,
+  WasmKyberPreKey,
+  WasmPreKey,
+  WasmSafetyNumber,
+  WasmSignedPreKey,
+} from "libsignal-wasm";
 import { useCallback, useRef, useState } from "react";
 import "./App.css";
 import {
@@ -14,18 +26,6 @@ import {
   saveSession,
   saveSignedPreKey,
 } from "./lib/storage";
-import init, {
-  generate_random_bytes,
-  generate_uuid,
-  message_type_prekey,
-  message_type_signal,
-  SignalClient,
-  uuid_to_string,
-  WasmKyberPreKey,
-  WasmPreKey,
-  WasmSafetyNumber,
-  WasmSignedPreKey,
-} from "./lib/wasm/libsignal_wasm";
 
 // Log entry type
 interface LogEntry {
@@ -184,6 +184,28 @@ function App() {
     const spks = await loadSignedPreKeys(uuid);
     const kpks = await loadKyberPreKeys(uuid);
 
+    // Import existing keys into WASM memory
+    if (pks.length > 0) {
+      log("info", `Restoring ${pks.length} PreKeys from IDB...`);
+      for (const pk of pks) {
+        if (pk.record) await c.import_pre_key(pk.id, pk.record);
+      }
+    }
+
+    if (spks.length > 0) {
+      log("info", `Restoring ${spks.length} Signed PreKeys from IDB...`);
+      for (const spk of spks) {
+        if (spk.record) await c.import_signed_pre_key(spk.id, spk.record);
+      }
+    }
+
+    if (kpks.length > 0) {
+      log("info", `Restoring ${kpks.length} Kyber PreKeys from IDB...`);
+      for (const kpk of kpks) {
+        if (kpk.record) await c.import_kyber_pre_key(kpk.id, kpk.record);
+      }
+    }
+
     if (pks.length === 0 || spks.length === 0 || kpks.length === 0) {
       log("info", "Missing keys detected on restore. Generating...");
       await initializeKeys(c);
@@ -232,6 +254,7 @@ function App() {
           uuid,
           id: pk.id,
           publicKey: pk.public_key,
+          record: pk.record,
         });
       }
       await persistIdentity(target); // Update counters
@@ -267,6 +290,7 @@ function App() {
         publicKey: spk.public_key,
         signature: spk.signature,
         timestamp: Number(spk.timestamp),
+        record: spk.record,
       });
       await persistIdentity(target); // Update counters
 
@@ -303,6 +327,7 @@ function App() {
         publicKey: kpk.public_key,
         signature: kpk.signature,
         timestamp: Number(kpk.timestamp),
+        record: kpk.record,
       });
       await persistIdentity(target);
 

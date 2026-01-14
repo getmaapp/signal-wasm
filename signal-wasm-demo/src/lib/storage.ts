@@ -8,7 +8,7 @@ interface SignalWasmDemoDB extends DBSchema {
       deviceId: number;
       registrationId: number;
       identityPublic: Uint8Array;
-      identityPrivate: Uint8Array; // serialized Zeroizing<Vec<u8>>
+      identityPrivate: Uint8Array;
       nextPreKeyId: number;
       nextSignedPreKeyId: number;
       nextKyberPreKeyId: number;
@@ -20,6 +20,7 @@ interface SignalWasmDemoDB extends DBSchema {
       uuid: string;
       id: number;
       publicKey: Uint8Array;
+      record: Uint8Array;
     };
   };
   signed_prekeys: {
@@ -30,6 +31,7 @@ interface SignalWasmDemoDB extends DBSchema {
       publicKey: Uint8Array;
       signature: Uint8Array;
       timestamp: number;
+      record: Uint8Array;
     };
   };
   kyber_prekeys: {
@@ -40,6 +42,7 @@ interface SignalWasmDemoDB extends DBSchema {
       publicKey: Uint8Array;
       signature: Uint8Array;
       timestamp: number;
+      record: Uint8Array;
     };
   };
   sessions: {
@@ -48,7 +51,7 @@ interface SignalWasmDemoDB extends DBSchema {
       localUuid: string;
       remoteUuid: string;
       remoteDeviceId: number;
-      record: Uint8Array; // Serialized SessionRecord
+      record: Uint8Array;
     };
   };
   sender_keys: {
@@ -58,46 +61,62 @@ interface SignalWasmDemoDB extends DBSchema {
       remoteUuid: string;
       remoteDeviceId: number;
       distributionId: string;
-      record: Uint8Array; // Serialized SenderKeyRecord
+      record: Uint8Array;
     };
   };
 }
 
+const MIGRATIONS: ((db: IDBPDatabase<SignalWasmDemoDB>) => void)[] = [
+  // v1: Initial setup of identity, prekeys, and sessions
+  (db) => {
+    db.createObjectStore("identity", { keyPath: "uuid" });
+    db.createObjectStore("prekeys", { keyPath: ["uuid", "id"] });
+    db.createObjectStore("signed_prekeys", { keyPath: ["uuid", "id"] });
+    db.createObjectStore("kyber_prekeys", { keyPath: ["uuid", "id"] });
+    db.createObjectStore("sessions", {
+      keyPath: ["localUuid", "remoteUuid", "remoteDeviceId"],
+    });
+  },
+  // v2: Added support for group messaging (Sender Keys)
+  (db) => {
+    if (!db.objectStoreNames.contains("sender_keys")) {
+      db.createObjectStore("sender_keys", {
+        keyPath: [
+          "localUuid",
+          "remoteUuid",
+          "remoteDeviceId",
+          "distributionId",
+        ],
+      });
+    }
+  },
+  // v3: Breaking change to add 'record' field to prekeys (re-create stores)
+  (db) => {
+    ["prekeys", "signed_prekeys", "kyber_prekeys"].forEach((name) => {
+      if (db.objectStoreNames.contains(name as any)) {
+        db.deleteObjectStore(name as any);
+      }
+      db.createObjectStore(name as any, { keyPath: ["uuid", "id"] });
+    });
+  },
+];
+
 const DB_NAME = "signal-wasm-demo-db";
-const DB_VERSION = 1;
+const DB_VERSION = MIGRATIONS.length;
 
 let dbPromise: Promise<IDBPDatabase<SignalWasmDemoDB>> | null = null;
 
 export const initDB = () => {
   if (!dbPromise) {
     dbPromise = openDB<SignalWasmDemoDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains("identity")) {
-          db.createObjectStore("identity", { keyPath: "uuid" });
-        }
-        if (!db.objectStoreNames.contains("prekeys")) {
-          db.createObjectStore("prekeys", { keyPath: ["uuid", "id"] });
-        }
-        if (!db.objectStoreNames.contains("signed_prekeys")) {
-          db.createObjectStore("signed_prekeys", { keyPath: ["uuid", "id"] });
-        }
-        if (!db.objectStoreNames.contains("kyber_prekeys")) {
-          db.createObjectStore("kyber_prekeys", { keyPath: ["uuid", "id"] });
-        }
-        if (!db.objectStoreNames.contains("sessions")) {
-          db.createObjectStore("sessions", {
-            keyPath: ["localUuid", "remoteUuid", "remoteDeviceId"],
-          });
-        }
-        if (!db.objectStoreNames.contains("sender_keys")) {
-          db.createObjectStore("sender_keys", {
-            keyPath: [
-              "localUuid",
-              "remoteUuid",
-              "remoteDeviceId",
-              "distributionId",
-            ],
-          });
+      upgrade(db, oldVersion, newVersion) {
+        console.log(`[DB] Upgrading from v${oldVersion} to v${newVersion}`);
+        for (let v = oldVersion + 1; v <= (newVersion || DB_VERSION); v++) {
+          const migrate = MIGRATIONS[v - 1];
+          if (migrate) {
+            console.log(`[DB] Running migration v${v}`);
+            migrate(db);
+          }
         }
       },
     });

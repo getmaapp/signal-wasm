@@ -70,11 +70,11 @@ expect_used = "warn"
 # Optimise for small binary size
 lto = true
 opt-level = "s"
-# Remove debug info
-debug = false
-# Abort on panic (smaller size)
+debug = 0
 panic = "abort"
 
 [profile.dev]
 # Faster dev builds
 opt-level = 1
+debug = 2
+panic = "unwind"

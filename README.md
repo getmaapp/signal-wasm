@@ -89,7 +89,7 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 
 # Build
-RUSTFLAGS='--cfg getrandom_backend="wasm_js"' wasm-pack build --target web --release
+wasm-pack build --target web --release
 ```
 
 ## Vite Configuration
