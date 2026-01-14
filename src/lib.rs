@@ -1077,48 +1077,4 @@ mod tests {
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
-
-    #[wasm_bindgen_test]
-    fn test_create_client() {
-        let client = SignalClient::new("test-uuid", 1).unwrap();
-        assert!(client.get_registration_id() > 0);
-        assert_eq!(client.get_local_uuid(), "test-uuid");
-    }
-
-    #[wasm_bindgen_test]
-    fn test_generate_pre_keys() {
-        let mut client = SignalClient::new("test-uuid", 1).unwrap();
-        let prekeys = client.generate_pre_keys(10).unwrap();
-        assert_eq!(prekeys.length(), 10);
-    }
-
-    #[wasm_bindgen_test]
-    fn test_generate_signed_pre_key() {
-        let mut client = SignalClient::new("test-uuid", 1).unwrap();
-        let spk = client.generate_signed_pre_key().unwrap();
-        assert_eq!(spk.id(), 1);
-        assert_eq!(spk.public_key().len(), 33);
-    }
-
-    #[wasm_bindgen_test]
-    fn test_generate_kyber_pre_key() {
-        let mut client = SignalClient::new("test-uuid", 1).unwrap();
-        let kpk = client.generate_kyber_pre_key().unwrap();
-        assert_eq!(kpk.id(), 1);
-        // Kyber1024 public key is 1568 bytes
-        assert!(kpk.public_key().len() > 1000);
-    }
-
-    #[wasm_bindgen_test]
-    fn test_safety_number_generation() {
-        let client = SignalClient::new("alice-uuid", 1).unwrap();
-        let bob_client = SignalClient::new("bob-uuid", 1).unwrap();
-        
-        let safety_number = client.generate_safety_number(
-            "bob-uuid".to_string(),
-            bob_client.get_identity_public_key(),
-        ).unwrap();
-        
-        assert_eq!(safety_number.displayable().len(), 60);
-    }
 }

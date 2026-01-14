@@ -135,6 +135,18 @@ export default defineConfig({
 });
 ```
 
+## Testing
+
+We use `wasm-bindgen-test` for headless browser integration testing.
+
+```bash
+# Run tests in Headless Chrome
+wasm-pack test --headless --chrome
+
+# Run tests in Headless Firefox
+wasm-pack test --headless --firefox
+```
+
 ## Licence
 
 AGPL-3.0 - See [LICENSE](LICENSE)
