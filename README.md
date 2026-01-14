@@ -4,6 +4,7 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![WASM](https://img.shields.io/badge/WASM-Ready-green)](https://webassembly.org/)
+[![Version](https://img.shields.io/badge/Version-0.1.0-blue)](Cargo.toml)
 
 ## Features
 
