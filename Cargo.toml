@@ -1,0 +1,80 @@
+[package]
+name = "libsignal-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"
+license = "AGPL-3.0-only"
+repository = "https://github.com/thecannabisapp/signal-wasm"
+keywords = ["signal", "encryption", "e2ee", "wasm", "cryptography"]
+categories = ["cryptography", "wasm"]
+readme = "README.md"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# WASM bindings
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console", "Window", "Performance"] }
+console_error_panic_hook = "0.1"
+
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = { version = "1.0.45" }
+
+# Core libsignal crates (git dependencies for independent build)
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.9" }
+libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.9" }
+signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.9" }
+
+# Randomness for browser (uses Web Crypto API)
+# We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:
+# 1. getrandom v0.2 is required by `curve25519-dalek` (v4.1.3) and `aes-gcm-siv` (v0.11.1),
+#    which depend on `rand_core` v0.6.
+# 2. getrandom v0.3 is required by `libsignal-core` and `uuid`, which use `rand` v0.9`.
+# Removing either will cause compilation failures.
+getrandom_v02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+# Async runtime for WASM
+futures = { version = "0.3" }
+
+# UUID handling
+uuid = { version = "1.5", features = ["v4", "serde", "js"] }
+
+# For zeroizing secrets
+zeroize = { version = "1.7", features = ["derive"] }
+
+# Random number generation
+rand = { version = "0.9" }
+
+# Constant-time comparisons
+subtle = "2.6"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+# Security-focused lints (note: cannot use workspace.lints with overrides)
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+# Optimize for small binary size
+lto = true
+opt-level = "s"
+# Remove debug info
+debug = false
+# Abort on panic (smaller size)
+panic = "abort"
+
+[profile.dev]
+# Faster dev builds
+opt-level = 1
