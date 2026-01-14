@@ -28,7 +28,8 @@ body {
 }
 
 .app {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1400px; /* Increased from 1200px for better monitor usage */
   margin: 0 auto;
   padding: 2rem;
 }
@@ -57,8 +58,9 @@ header p {
 
 main {
   display: grid;
-  grid-template-columns: 350px 1fr;
+  grid-template-columns: minmax(300px, 350px) 1fr;
   gap: 2rem;
+  align-items: start; /* Prevent sidebar from stretching if logs are long */
 }
 
 @media (max-width: 900px) {
