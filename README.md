@@ -25,7 +25,7 @@ npm install @thecannabisapp/libsignal-wasm
 ```typescript
 import init, { SignalClient } from '@thecannabisapp/libsignal-wasm';
 
-// Initialize WASM module
+// Initialise WASM module
 await init();
 
 // Create a new client
@@ -46,7 +46,7 @@ const identityKey = client.get_identity_public_key();
 
 | Method | Description |
 |--------|-------------|
-| `new(uuid, deviceId)` | Create new client with fresh identity |
+| `new(uuid, deviceId)` | Create a new client with a fresh identity |
 | `restore(...)` | Restore from saved state |
 | `generate_prekeys(count)` | Generate one-time PreKeys |
 | `generate_signed_prekey()` | Generate signed PreKey |
@@ -63,8 +63,8 @@ const identityKey = client.get_identity_public_key();
 
 | Function | Description |
 |----------|-------------|
-| `generate_random_bytes(length)` | CSPRNG random bytes |
-| `generate_uuid()` | Generate UUID v4 |
+| `generate_random_bytes(length)` | Generate CSPRNG random bytes |
+| `generate_uuid()` | Generate a UUID v4 |
 | `uuid_to_string(bytes)` | Convert UUID bytes to string |
 | `message_type_signal()` | Normal message type (2) |
 | `message_type_prekey()` | PreKey message type (3) |
@@ -79,7 +79,7 @@ const identityKey = client.get_identity_public_key();
 - ✅ Generic error messages in production
 
 ### ⚠️ Memory Safety Caveat
-While this library uses `Zeroizing` to clear secrets from WASM memory when they are dropped, **keys exported to JavaScript are subject to the browser's Garbage Collector**. We cannot guarantee that secrets moved into JS memory (e.g., via `get_identity_key_pair()`) are securely erased. Treat exported keys with extreme care.
+While this library uses `Zeroizing` to clear secrets from WASM memory when they are dropped, **keys exported to JavaScript are subject to the browser's garbage collector**. We cannot guarantee that secrets moved into JS memory (e.g., via `get_identity_key_pair()`) are securely erased. Treat exported keys with extreme care.
 
 ## Build from Source
 

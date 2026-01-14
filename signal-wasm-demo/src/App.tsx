@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import './App.css';
+import { useCallback, useState } from "react";
+import "./App.css";
 import init, {
   generate_random_bytes,
   generate_uuid,
@@ -11,13 +11,13 @@ import init, {
   WasmPreKey,
   WasmSafetyNumber,
   WasmSignedPreKey,
-} from './lib/wasm/libsignal_wasm';
+} from "./lib/wasm/libsignal_wasm";
 
 // Log entry type
 interface LogEntry {
   id: number;
   time: string;
-  type: 'info' | 'success' | 'error' | 'data';
+  type: "info" | "success" | "error" | "data";
   message: string;
   data?: string;
 }
@@ -25,12 +25,12 @@ interface LogEntry {
 // Hex encoding helper
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
 const toHexTruncated = (bytes: Uint8Array, maxLen = 32): string => {
   const hex = toHex(bytes);
-  return hex.length > maxLen * 2 ? hex.slice(0, maxLen * 2) + '...' : hex;
+  return hex.length > maxLen * 2 ? hex.slice(0, maxLen * 2) + "..." : hex;
 };
 
 function App() {
@@ -38,47 +38,50 @@ function App() {
   const [client, setClient] = useState<SignalClient | null>(null);
   const [bobClient, setBobClient] = useState<SignalClient | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [logId, setLogId] = useState(0);
+  const [, setLogId] = useState(0);
 
   // Add log entry
-  const log = useCallback((type: LogEntry['type'], message: string, data?: string) => {
-    setLogId((prev) => {
-      const newId = prev + 1;
-      setLogs((logs) => [
-        ...logs,
-        {
-          id: newId,
-          time: new Date().toLocaleTimeString(),
-          type,
-          message,
-          data,
-        },
-      ]);
-      return newId;
-    });
-  }, []);
+  const log = useCallback(
+    (type: LogEntry["type"], message: string, data?: string) => {
+      setLogId((prev) => {
+        const newId = prev + 1;
+        setLogs((logs) => [
+          ...logs,
+          {
+            id: newId,
+            time: new Date().toLocaleTimeString(),
+            type,
+            message,
+            data,
+          },
+        ]);
+        return newId;
+      });
+    },
+    []
+  );
 
-  // Initialize WASM
+  // Initialise WASM
   const initWasm = async () => {
     try {
-      log('info', 'Initializing WASM module...');
+      log("info", "Initialising WASM module...");
       await init();
       setWasmReady(true);
-      log('success', '✅ WASM module initialized!');
+      log("success", "✅ WASM module initialised!");
     } catch (e) {
-      log('error', `Failed to init WASM: ${e}`);
+      log("error", `Failed to init WASM: ${e}`);
     }
   };
 
   // Create client (Alice)
   const createClient = () => {
     try {
-      log('info', 'Creating Alice client...');
+      log("info", "Creating Alice client...");
       const uuid = uuid_to_string(generate_uuid());
       const newClient = new SignalClient(uuid, 1);
       setClient(newClient);
       log(
-        'success',
+        "success",
         `✅ Alice client created`,
         JSON.stringify(
           {
@@ -91,19 +94,19 @@ function App() {
         )
       );
     } catch (e) {
-      log('error', `Failed to create client: ${e}`);
+      log("error", `Failed to create client: ${e}`);
     }
   };
 
   // Create Bob client for messaging demo
   const createBobClient = () => {
     try {
-      log('info', 'Creating Bob client...');
+      log("info", "Creating Bob client...");
       const uuid = uuid_to_string(generate_uuid());
       const newClient = new SignalClient(uuid, 1);
       setBobClient(newClient);
       log(
-        'success',
+        "success",
         `✅ Bob client created`,
         JSON.stringify(
           {
@@ -116,7 +119,7 @@ function App() {
         )
       );
     } catch (e) {
-      log('error', `Failed to create Bob: ${e}`);
+      log("error", `Failed to create Bob: ${e}`);
     }
   };
 
@@ -126,8 +129,8 @@ function App() {
     try {
       const keyPair = client.get_identity_key_pair();
       log(
-        'data',
-        '🔑 Identity Key Pair',
+        "data",
+        "🔑 Identity Key Pair",
         JSON.stringify(
           {
             publicKey: toHexTruncated(keyPair.public_key),
@@ -140,7 +143,7 @@ function App() {
         )
       );
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
@@ -148,10 +151,10 @@ function App() {
   const generatePreKeys = () => {
     if (!client) return;
     try {
-      log('info', 'Generating 10 PreKeys...');
+      log("info", "Generating 10 PreKeys...");
       const prekeys = client.generate_prekeys(10) as WasmPreKey[];
       log(
-        'success',
+        "success",
         `✅ Generated ${prekeys.length} PreKeys`,
         JSON.stringify(
           prekeys.slice(0, 3).map((pk) => ({
@@ -163,7 +166,7 @@ function App() {
         ) + `\n... and ${prekeys.length - 3} more`
       );
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
@@ -171,11 +174,11 @@ function App() {
   const generateSignedPreKey = () => {
     if (!client) return;
     try {
-      log('info', 'Generating Signed PreKey...');
+      log("info", "Generating Signed PreKey...");
       const spk = client.generate_signed_prekey() as WasmSignedPreKey;
       log(
-        'success',
-        '✅ Signed PreKey generated',
+        "success",
+        "✅ Signed PreKey generated",
         JSON.stringify(
           {
             id: spk.id,
@@ -188,7 +191,7 @@ function App() {
         )
       );
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
@@ -196,11 +199,11 @@ function App() {
   const generateKyberPreKey = () => {
     if (!client) return;
     try {
-      log('info', 'Generating Kyber PreKey (PQXDH)...');
+      log("info", "Generating Kyber PreKey (PQXDH)...");
       const kpk = client.generate_kyber_prekey() as WasmKyberPreKey;
       log(
-        'success',
-        '✅ Kyber PreKey generated (post-quantum)',
+        "success",
+        "✅ Kyber PreKey generated (post-quantum)",
         JSON.stringify(
           {
             id: kpk.id,
@@ -213,24 +216,27 @@ function App() {
         )
       );
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
   // Generate Safety Number
   const generateSafetyNumber = () => {
     if (!client || !bobClient) {
-      log('error', 'Need both Alice and Bob clients');
+      log("error", "Need both Alice and Bob clients");
       return;
     }
     try {
-      log('info', 'Generating safety number...');
+      log("info", "Generating safety number...");
       const bobPubKey = bobClient.get_identity_public_key();
       const bobUuid = bobClient.get_local_uuid();
-      const safetyNumber = client.generate_safety_number(bobUuid, bobPubKey) as WasmSafetyNumber;
+      const safetyNumber = client.generate_safety_number(
+        bobUuid,
+        bobPubKey
+      ) as WasmSafetyNumber;
       log(
-        'success',
-        '✅ Safety number generated',
+        "success",
+        "✅ Safety number generated",
         JSON.stringify(
           {
             displayable: safetyNumber.displayable,
@@ -241,7 +247,7 @@ function App() {
         )
       );
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
@@ -249,9 +255,9 @@ function App() {
   const generateRandomBytes = () => {
     try {
       const bytes = generate_random_bytes(32);
-      log('data', '🎲 Random bytes (32)', toHex(bytes));
+      log("data", "🎲 Random bytes (32)", toHex(bytes));
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
@@ -260,17 +266,17 @@ function App() {
     try {
       const uuidBytes = generate_uuid();
       const uuidStr = uuid_to_string(uuidBytes);
-      log('data', '🆔 Generated UUID', uuidStr);
+      log("data", "🆔 Generated UUID", uuidStr);
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
   // Message type constants
   const showMessageTypes = () => {
     log(
-      'data',
-      '📨 Message Types',
+      "data",
+      "📨 Message Types",
       JSON.stringify(
         {
           SIGNAL_MESSAGE: message_type_signal(),
@@ -286,11 +292,15 @@ function App() {
   const exportImportDemo = async () => {
     if (!client) return;
     try {
-      log('info', 'Testing session export (no active session)...');
-      const exported = await client.export_session('test-contact', 1);
-      log('data', 'Session export result', exported ? `${exported.length} bytes` : 'null (no session)');
+      log("info", "Testing session export (no active session)...");
+      const exported = await client.export_session("test-contact", 1);
+      log(
+        "data",
+        "Session export result",
+        exported ? `${exported.length} bytes` : "null (no session)"
+      );
     } catch (e) {
-      log('error', `Failed: ${e}`);
+      log("error", `Failed: ${e}`);
     }
   };
 
@@ -309,15 +319,18 @@ function App() {
           <h2>Controls</h2>
 
           <div className="button-group">
-            <h3>Initialization</h3>
+            <h3>Initialisation</h3>
             <button onClick={initWasm} disabled={wasmReady}>
-              {wasmReady ? '✅ WASM Ready' : '1. Init WASM'}
+              {wasmReady ? "✅ WASM Ready" : "1. Init WASM"}
             </button>
             <button onClick={createClient} disabled={!wasmReady || !!client}>
-              {client ? '✅ Alice Ready' : '2. Create Alice'}
+              {client ? "✅ Alice Ready" : "2. Create Alice"}
             </button>
-            <button onClick={createBobClient} disabled={!wasmReady || !!bobClient}>
-              {bobClient ? '✅ Bob Ready' : '3. Create Bob'}
+            <button
+              onClick={createBobClient}
+              disabled={!wasmReady || !!bobClient}
+            >
+              {bobClient ? "✅ Bob Ready" : "3. Create Bob"}
             </button>
           </div>
 
@@ -339,7 +352,10 @@ function App() {
 
           <div className="button-group">
             <h3>Crypto Operations</h3>
-            <button onClick={generateSafetyNumber} disabled={!client || !bobClient}>
+            <button
+              onClick={generateSafetyNumber}
+              disabled={!client || !bobClient}
+            >
               Safety Number
             </button>
             <button onClick={generateRandomBytes} disabled={!wasmReady}>
@@ -367,7 +383,9 @@ function App() {
         <section className="log-panel">
           <h2>Activity Log</h2>
           <div className="logs">
-            {logs.length === 0 && <div className="log-empty">Click "Init WASM" to start</div>}
+            {logs.length === 0 && (
+              <div className="log-empty">Click "Init WASM" to start</div>
+            )}
             {logs.map((entry) => (
               <div key={entry.id} className={`log-entry log-${entry.type}`}>
                 <span className="log-time">{entry.time}</span>

@@ -55,16 +55,16 @@ use libsignal_protocol::{
 };
 
 // ============================================================================
-// SECTION 1: Initialization
+// SECTION 1: Initialisation
 // ============================================================================
 
-/// Initialize the WASM module. Called automatically when the module loads.
+/// Initialise the WASM module. Called automatically when the module loads.
 #[wasm_bindgen(start)]
 pub fn init() {
     #[cfg(debug_assertions)]
     {
         console_error_panic_hook::set_once();
-        web_sys::console::log_1(&"[Signal WASM] Module initialized (Debug Mode)".into());
+        web_sys::console::log_1(&"[Signal WASM] Module initialised (Debug Mode)".into());
     }
 }
 

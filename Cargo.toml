@@ -21,15 +21,15 @@ web-sys = { version = "0.3", features = ["console", "Window", "Performance"] }
 console_error_panic_hook = "0.1"
 
 
-# Serialization
+# Serialisation
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 serde_json = { version = "1.0.45" }
 
 # Core libsignal crates (git dependencies for independent build)
-libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.9" }
-libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.9" }
-signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.9" }
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
+libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
+signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
 
 # Randomness for browser (uses Web Crypto API)
 # We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:
@@ -46,7 +46,7 @@ futures = { version = "0.3" }
 # UUID handling
 uuid = { version = "1.5", features = ["v4", "serde", "js"] }
 
-# For zeroizing secrets
+# For zeroising secrets
 zeroize = { version = "1.7", features = ["derive"] }
 
 # Random number generation
@@ -67,7 +67,7 @@ unwrap_used = "warn"
 expect_used = "warn"
 
 [profile.release]
-# Optimize for small binary size
+# Optimise for small binary size
 lto = true
 opt-level = "s"
 # Remove debug info
