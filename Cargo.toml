@@ -1,5 +1,5 @@
 [package]
-name = "libsignal-wasm"
+name = "@getmaapp/signal-wasm"
 version = "0.1.0"
 edition = "2021"
 description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"

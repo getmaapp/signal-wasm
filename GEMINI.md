@@ -1,6 +1,6 @@
 # GEMINI.md - AI Agent Context
 
-> **Target Audience**: AI Agents (Gemini, Claude, GPT, etc.) working on `@getmaapp/libsignal-wasm`.
+> **Target Audience**: AI Agents (Gemini, Claude, GPT, etc.) working on `@getmaapp/signal-wasm`.
 > **Purpose**: Accelerate context loading and prevent regression of known WASM specific issues.
 
 ## 1. Project Identity

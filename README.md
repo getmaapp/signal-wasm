@@ -1,4 +1,4 @@
-# @getmaapp/libsignal-wasm
+# @getmaapp/signal-wasm
 
 > Signal Protocol compiled to WebAssembly for browser-based E2EE messaging
 
@@ -18,13 +18,13 @@
 ## Installation
 
 ```bash
-npm install @getmaapp/libsignal-wasm
+npm install @getmaapp/signal-wasm
 ```
 
 ## Quick Start
 
 ```typescript
-import init, { SignalClient } from '@getmaapp/libsignal-wasm';
+import init, { SignalClient } from '@getmaapp/signal-wasm';
 
 // Initialise WASM module
 await init();
