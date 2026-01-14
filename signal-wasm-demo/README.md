@@ -40,6 +40,18 @@ npm run dev
 ```
 
 The app will be available at `http://localhost:5173`.
+ 
+ ## Testing (E2E)
+ 
+ We use **Playwright** to verify the full application lifecycle, from bundle loading to message decryption.
+ 
+ ```bash
+ # Run E2E tests (headless)
+ npx playwright test
+ 
+ # Open interactive test UI
+ npx playwright test --ui
+ ```
 
 ## How it Works
 

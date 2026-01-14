@@ -14,6 +14,8 @@
     - **Wrappers**: Maps `libsignal` Rust types (e.g., `SessionRecord`) to WASM classes (e.g., `WasmSessionRecord`).
 - **`tests/web.rs`**: Integration tests running in headless Chrome.
     - **Framework**: `wasm-bindgen-test`.
+- **`signal-wasm-demo/`**: React 19 demo app and E2E test suite.
+    - **Tests**: Playwright E2E tests in `tests/e2e.spec.ts`.
 - **`Cargo.toml`**: Configures dependencies. Note `getrandom` conflicts (v0.2 vs v0.3) resolution.
 
 ## 3. Critical Technical Constraints (WASM)
@@ -46,6 +48,13 @@
 All tests must pass in a headless browser environment:
 ```bash
 wasm-pack test --headless --chrome
+```
+
+### Running E2E Tests (Demo App)
+Verify full application integration using Playwright:
+```bash
+cd signal-wasm-demo
+npx playwright test
 ```
 
 ### Coverage Status (as of Jan 2026)

@@ -36,7 +36,22 @@ We will implement a suite of tests in `tests/web.rs` covering the following core
 ### 2.5 Group Messaging
 *   **`sender_keys`**: Distribution of Sender Keys and group encryption/decryption round-trip.
 
-## 3. Running Tests
+## 3. End-to-End Testing (Demo App)
+
+Beyond library correctness, we verify the **Application Integration** using Playwright in the `signal-wasm-demo` project.
+
+**Scope:**
+*   **Bundling**: Verifies Vite correctly packages the WASM binary.
+*   **Initialization**: Tests dynamic WASM loading.
+*   **User Flow**: Full 1:1 messaging loop (Create Clients -> Session -> Encrypt -> Decrypt) via real UI interactions.
+
+### Running E2E Tests
+```bash
+cd signal-wasm-demo
+npx playwright test
+```
+
+## 4. Running Tests
 
 ### Prerequisites
 *   `wasm-pack`: `cargo install wasm-pack`
@@ -55,7 +70,7 @@ wasm-pack test --headless --chrome
 wasm-pack test --headless --firefox
 ```
 
-## 4. Implementation Steps
+## 5. Implementation Steps
 
 1.  **Configure `Cargo.toml`**: Ensure `wasm-bindgen-test` is a dev-dependency.
 2.  **Create `tests/web.rs`**: The main test file configured for WASM.
@@ -65,7 +80,7 @@ wasm-pack test --headless --firefox
     *   `test_session_and_messaging()`
     *   `test_group_messaging()`
 
-## 5. CI Integration (Future)
+## 6. CI Integration (Future)
 
 For Continuous Integration, ensure the runner has:
 1.  Rust toolchain (`rustup target add wasm32-unknown-unknown`).
