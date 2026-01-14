@@ -1,73 +1,53 @@
-# React + TypeScript + Vite
+# Signal WASM Demo App
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React 19 / Vite application demonstrating the capabilities of `@thecannabisapp/libsignal-wasm`.
 
-Currently, two official plugins are available:
+## Features Demonstrated
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 🔑 **Identity Management**: Generation and persistence of Signal identity keys.
+- 📦 **Key Generation**: 1:1 PreKeys, Signed PreKeys, and Post-Quantum Kyber PreKeys.
+- 🤝 **Session Establishment**: Full X3DH/PQXDH handshake (simulated).
+- 💬 **1:1 Messaging**: Encrypting and decrypting messages using the Signal Double Ratchet.
+- 👨‍👩‍👧‍👦 **Group Messaging**: Sender Key based group encryption.
+- 🛡️ **Post-Quantum Crypto**: Integration of Kyber1024 for quantum-resistant handshakes.
+- 💾 **Persistence**: full state restoration from IndexedDB via `SignalClient.restore()`.
+- 🚥 **Activity Log**: Real-time visualization of internal cryptographic operations.
 
-## React Compiler
+## Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **React 19**: Modern UI with `useEffect` and `useState` for state management.
+- **WASM Bridge**: Direct integration with the `@thecannabisapp/libsignal-wasm` package.
+- **IndexedDB**: Persistent storage via the `idb` library with automated schema migrations.
+- **Vite**: Ultra-fast build tool with WASM support.
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js (v18+)
+- Local build of `libsignal-wasm` (run `wasm-pack build` in the parent directory)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Installation
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Running the Demo
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+The app will be available at `http://localhost:5173`.
+
+## How it Works
+
+1. **Initialisation**: Load the WASM module and initialize/upgrade the IndexedDB.
+2. **Client Creation**: Alice and Bob clients are restored from IDB (or created fresh).
+3. **Key Generation**: Clients generate cryptographic "bundles" (PreKeys) for server upload.
+4. **Messaging**: Alice fetches Bob's bundle, establishes a session, and sends encrypted payloads.
+
+---
+
+*Note: This is a demonstration app. In a production environment, you would use a server (e.g., via tRPC or WebSockets) to synchronize key bundles and exchange ciphertext messages between clients.*

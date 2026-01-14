@@ -1,7 +1,7 @@
 import init, {
   generate_random_bytes,
   generate_uuid,
-  message_type_prekey,
+  message_type_pre_key,
   message_type_signal,
   SignalClient,
   uuid_to_string,
@@ -95,9 +95,9 @@ function App() {
         registrationId: c.get_registration_id(),
         identityPublic: c.get_identity_public_key(),
         identityPrivate: c.get_identity_key_pair().private_key,
-        nextPreKeyId: c.get_next_prekey_id(),
-        nextSignedPreKeyId: c.get_next_signed_prekey_id(),
-        nextKyberPreKeyId: c.get_next_kyber_prekey_id(),
+        nextPreKeyId: c.get_next_pre_key_id(),
+        nextSignedPreKeyId: c.get_next_signed_pre_key_id(),
+        nextKyberPreKeyId: c.get_next_kyber_pre_key_id(),
       });
     } catch (e) {
       log("error", `Failed to save identity: ${e}`);
@@ -245,7 +245,7 @@ function App() {
         "info",
         `Generating 10 PreKeys for ${target.get_local_uuid().slice(-4)}...`
       );
-      const prekeys = target.generate_prekeys(10) as WasmPreKey[];
+      const prekeys = target.generate_pre_keys(10) as WasmPreKey[];
 
       // Persist
       const uuid = target.get_local_uuid();
@@ -282,7 +282,7 @@ function App() {
     if (!target) return;
     try {
       log("info", "Generating Signed PreKey...");
-      const spk = target.generate_signed_prekey() as WasmSignedPreKey;
+      const spk = target.generate_signed_pre_key() as WasmSignedPreKey;
 
       await saveSignedPreKey({
         uuid: target.get_local_uuid(),
@@ -319,7 +319,7 @@ function App() {
     if (!target) return;
     try {
       log("info", "Generating Kyber PreKey (PQXDH)...");
-      const kpk = target.generate_kyber_prekey() as WasmKyberPreKey;
+      const kpk = target.generate_kyber_pre_key() as WasmKyberPreKey;
 
       await saveKyberPreKey({
         uuid: target.get_local_uuid(),
@@ -410,7 +410,7 @@ function App() {
       JSON.stringify(
         {
           SIGNAL_MESSAGE: message_type_signal(),
-          PREKEY_MESSAGE: message_type_prekey(),
+          PREKEY_MESSAGE: message_type_pre_key(),
         },
         null,
         2
@@ -474,7 +474,7 @@ function App() {
       const oneTimePreKey = bobPreKeys[0];
 
       // 2. Alice processes bundle
-      await client.process_prekey_bundle(
+      await client.process_pre_key_bundle(
         bobUuid,
         bobDevId,
         bobRegId,

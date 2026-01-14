@@ -427,17 +427,17 @@ impl SignalClient {
     }
     
     #[wasm_bindgen]
-    pub fn get_next_prekey_id(&self) -> u32 {
+    pub fn get_next_pre_key_id(&self) -> u32 {
         self.next_prekey_id
     }
     
     #[wasm_bindgen]
-    pub fn get_next_signed_prekey_id(&self) -> u32 {
+    pub fn get_next_signed_pre_key_id(&self) -> u32 {
         self.next_signed_prekey_id
     }
     
     #[wasm_bindgen]
-    pub fn get_next_kyber_prekey_id(&self) -> u32 {
+    pub fn get_next_kyber_pre_key_id(&self) -> u32 {
         self.next_kyber_prekey_id
     }
     
@@ -447,7 +447,7 @@ impl SignalClient {
     
     /// Generate a batch of one-time PreKeys.
     #[wasm_bindgen]
-    pub fn generate_prekeys(&mut self, count: u32) -> Result<Array, JsValue> {
+    pub fn generate_pre_keys(&mut self, count: u32) -> Result<Array, JsValue> {
         let mut rng = rand::rng();
         let result = Array::new();
         
@@ -477,7 +477,7 @@ impl SignalClient {
     
     /// Generate a signed PreKey.
     #[wasm_bindgen]
-    pub fn generate_signed_prekey(&mut self) -> Result<WasmSignedPreKey, JsValue> {
+    pub fn generate_signed_pre_key(&mut self) -> Result<WasmSignedPreKey, JsValue> {
         let mut rng = rand::rng();
         
         let id = self.next_signed_prekey_id;
@@ -518,7 +518,7 @@ impl SignalClient {
     /// Generate a Kyber PreKey for post-quantum security.
     /// Uses Kyber1024 (Signal production default).
     #[wasm_bindgen]
-    pub fn generate_kyber_prekey(&mut self) -> Result<WasmKyberPreKey, JsValue> {
+    pub fn generate_kyber_pre_key(&mut self) -> Result<WasmKyberPreKey, JsValue> {
         let id = self.next_kyber_prekey_id;
         self.next_kyber_prekey_id = self.next_kyber_prekey_id.checked_add(1)
             .ok_or_else(|| JsValue::from_str("Kyber PreKey ID overflow"))?;
@@ -551,10 +551,10 @@ impl SignalClient {
     
     /// Generate multiple Kyber PreKeys.
     #[wasm_bindgen]
-    pub fn generate_kyber_prekeys(&mut self, count: u32) -> Result<Array, JsValue> {
+    pub fn generate_kyber_pre_keys(&mut self, count: u32) -> Result<Array, JsValue> {
         let result = Array::new();
         for _ in 0..count {
-            let kpk = self.generate_kyber_prekey()?;
+            let kpk = self.generate_kyber_pre_key()?;
             result.push(&JsValue::from(kpk));
         }
         Ok(result)
@@ -566,7 +566,7 @@ impl SignalClient {
     
     /// Process a PreKeyBundle to establish a session.
     #[wasm_bindgen]
-    pub async fn process_prekey_bundle(
+    pub async fn process_pre_key_bundle(
         &mut self,
         recipient_uuid: String,
         recipient_device_id: u32,
@@ -977,53 +977,29 @@ impl SignalClient {
     
     /// Export a PreKey.
     #[wasm_bindgen]
-    pub async fn export_prekey(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
+    pub async fn export_pre_key(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
         match self.prekey_store.get_pre_key(id.into()).await {
             Ok(record) => Ok(Some(record.serialize().map_err(to_js_error)?)),
             Err(_) => Ok(None),
         }
     }
-    
-    /// Import a PreKey.
-    #[wasm_bindgen]
-    pub async fn import_prekey(&mut self, id: u32, record_bytes: Vec<u8>) -> Result<(), JsValue> {
-        let record = PreKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
-        self.prekey_store.save_pre_key(id.into(), &record).await.map_err(to_js_error)?;
-        Ok(())
-    }
-    
+
     /// Export a Signed PreKey.
     #[wasm_bindgen]
-    pub async fn export_signed_prekey(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
+    pub async fn export_signed_pre_key(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
         match self.signed_prekey_store.get_signed_pre_key(id.into()).await {
             Ok(record) => Ok(Some(record.serialize().map_err(to_js_error)?)),
             Err(_) => Ok(None),
         }
     }
-    
-    /// Import a Signed PreKey.
-    #[wasm_bindgen]
-    pub async fn import_signed_prekey(&mut self, id: u32, record_bytes: Vec<u8>) -> Result<(), JsValue> {
-        let record = SignedPreKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
-        self.signed_prekey_store.save_signed_pre_key(id.into(), &record).await.map_err(to_js_error)?;
-        Ok(())
-    }
-    
+
     /// Export a Kyber PreKey.
     #[wasm_bindgen]
-    pub async fn export_kyber_prekey(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
+    pub async fn export_kyber_pre_key(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
         match self.kyber_prekey_store.get_kyber_pre_key(id.into()).await {
             Ok(record) => Ok(Some(record.serialize().map_err(to_js_error)?)),
             Err(_) => Ok(None),
         }
-    }
-    
-    /// Import a Kyber PreKey.
-    #[wasm_bindgen]
-    pub async fn import_kyber_prekey(&mut self, id: u32, record_bytes: Vec<u8>) -> Result<(), JsValue> {
-        let record = KyberPreKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
-        self.kyber_prekey_store.save_kyber_pre_key(id.into(), &record).await.map_err(to_js_error)?;
-        Ok(())
     }
 }
 
@@ -1081,7 +1057,7 @@ pub fn message_type_signal() -> u8 {
 
 /// Get message type for PreKeySignalMessage (first message establishing session)
 #[wasm_bindgen]
-pub fn message_type_prekey() -> u8 {
+pub fn message_type_pre_key() -> u8 {
     3 // CiphertextMessageType::PreKey
 }
 
@@ -1110,24 +1086,24 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    fn test_generate_prekeys() {
+    fn test_generate_pre_keys() {
         let mut client = SignalClient::new("test-uuid", 1).unwrap();
-        let prekeys = client.generate_prekeys(10).unwrap();
+        let prekeys = client.generate_pre_keys(10).unwrap();
         assert_eq!(prekeys.length(), 10);
     }
 
     #[wasm_bindgen_test]
-    fn test_generate_signed_prekey() {
+    fn test_generate_signed_pre_key() {
         let mut client = SignalClient::new("test-uuid", 1).unwrap();
-        let spk = client.generate_signed_prekey().unwrap();
+        let spk = client.generate_signed_pre_key().unwrap();
         assert_eq!(spk.id(), 1);
         assert_eq!(spk.public_key().len(), 33);
     }
 
     #[wasm_bindgen_test]
-    fn test_generate_kyber_prekey() {
+    fn test_generate_kyber_pre_key() {
         let mut client = SignalClient::new("test-uuid", 1).unwrap();
-        let kpk = client.generate_kyber_prekey().unwrap();
+        let kpk = client.generate_kyber_pre_key().unwrap();
         assert_eq!(kpk.id(), 1);
         // Kyber1024 public key is 1568 bytes
         assert!(kpk.public_key().len() > 1000);

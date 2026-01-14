@@ -32,9 +32,9 @@ await init();
 const client = new SignalClient('your-uuid', 1);
 
 // Generate keys for registration
-const prekeys = client.generate_prekeys(100);
-const signedPrekey = client.generate_signed_prekey();
-const kyberPrekey = client.generate_kyber_prekey();
+const prekeys = client.generate_pre_keys(100);
+const signedPreKey = client.generate_signed_pre_key();
+const kyberPreKey = client.generate_kyber_pre_key();
 
 // Get identity key for server upload
 const identityKey = client.get_identity_public_key();
@@ -47,17 +47,48 @@ const identityKey = client.get_identity_public_key();
 | Method | Description |
 |--------|-------------|
 | `new(uuid, deviceId)` | Create a new client with a fresh identity |
-| `restore(...)` | Restore from saved state |
-| `generate_prekeys(count)` | Generate one-time PreKeys |
-| `generate_signed_prekey()` | Generate signed PreKey |
-| `generate_kyber_prekey()` | Generate Kyber PreKey (PQXDH) |
-| `process_prekey_bundle(...)` | Establish session from bundle |
-| `encrypt_message(uuid, deviceId, plaintext)` | Encrypt 1:1 message |
-| `decrypt_message(uuid, deviceId, ciphertext, type)` | Decrypt 1:1 message |
-| `create_sender_key_distribution(distributionId)` | Create group key |
-| `encrypt_group_message(distributionId, plaintext)` | Encrypt group message |
-| `decrypt_group_message(uuid, deviceId, ciphertext)` | Decrypt group message |
-| `generate_safety_number(contactUuid, contactKey)` | Generate safety number |
+| `restore(...)` | Restore client identity from saved data |
+| `generate_pre_keys(count)` | Generate one-time PreKeys |
+| `generate_signed_pre_key()` | Generate signed PreKey |
+| `generate_kyber_pre_key()` | Generate Kyber PreKey (PQXDH) |
+| `process_pre_key_bundle(...)` | Establish session from bundle |
+| `encrypt_message(...)` | Encrypt 1:1 message |
+| `decrypt_message(...)` | Decrypt 1:1 message |
+| `create_sender_key_dist(...)` | Create group key distribution message |
+| `encrypt_group_message(...)` | Encrypt group message |
+| `decrypt_group_message(...)` | Decrypt group message |
+| `generate_safety_number(...)` | Generate safety number for verification |
+| `verify_safety_number(...)` | Verify a scanned safety number |
+| `get_next_pre_key_id()` | Get next PreKey ID |
+| `get_next_signed_pre_key_id()` | Get next Signed PreKey ID |
+| `get_next_kyber_pre_key_id()` | Get next Kyber PreKey ID |
+
+### State Persistence (IndexedDB)
+
+Methods to export and import serialized records for persistence:
+
+| Method | Description |
+|--------|-------------|
+| `export_session(uuid, devId)` | Export encrypted session record |
+| `import_session(uuid, devId, bytes)` | Import encrypted session record |
+| `export_pre_key(id)` | Export full PreKey record (with private key) |
+| `import_pre_key(id, bytes)` | Import full PreKey record |
+| `export_signed_pre_key(id)` | Export full Signed PreKey record |
+| `import_signed_pre_key(id, bytes)` | Import full Signed PreKey record |
+| `export_kyber_pre_key(id)` | Export full Kyber PreKey record |
+| `import_kyber_pre_key(id, bytes)` | Import full Kyber PreKey record |
+| `export_sender_key(...)` | Export Group Sender Key record |
+| `import_sender_key(...)` | Import Group Sender Key record |
+
+### Data Structures
+
+| Struct | Properties |
+|--------|------------|
+| `WasmPreKey` | `id`, `public_key`, `record` (serialized full record) |
+| `WasmSignedPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` |
+| `WasmKyberPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` |
+| `WasmCiphertext` | `message_type`, `body` |
+| `WasmSafetyNumber` | `displayable` (string), `scannable` (bytes) |
 
 ### Utility Functions
 
@@ -67,7 +98,7 @@ const identityKey = client.get_identity_public_key();
 | `generate_uuid()` | Generate a UUID v4 |
 | `uuid_to_string(bytes)` | Convert UUID bytes to string |
 | `message_type_signal()` | Normal message type (2) |
-| `message_type_prekey()` | PreKey message type (3) |
+| `message_type_pre_key()` | PreKey message type (3) |
 
 ## Security
 
