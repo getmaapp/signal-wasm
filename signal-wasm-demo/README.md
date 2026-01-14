@@ -11,7 +11,7 @@ A React 19 / Vite application demonstrating the capabilities of `@thecannabisapp
 - 👨‍👩‍👧‍👦 **Group Messaging**: Sender Key based group encryption.
 - 🛡️ **Post-Quantum Crypto**: Integration of Kyber1024 for quantum-resistant handshakes.
 - 💾 **Persistence**: full state restoration from IndexedDB via `SignalClient.restore()`.
-- 🚥 **Activity Log**: Real-time visualization of internal cryptographic operations.
+- 🚥 **Activity Log**: Real-time visualisation of internal cryptographic operations.
 
 ## Architecture
 
@@ -43,11 +43,11 @@ The app will be available at `http://localhost:5173`.
 
 ## How it Works
 
-1. **Initialisation**: Load the WASM module and initialize/upgrade the IndexedDB.
+1. **Initialisation**: Load the WASM module and initialise/upgrade the IndexedDB.
 2. **Client Creation**: Alice and Bob clients are restored from IDB (or created fresh).
 3. **Key Generation**: Clients generate cryptographic "bundles" (PreKeys) for server upload.
 4. **Messaging**: Alice fetches Bob's bundle, establishes a session, and sends encrypted payloads.
 
 ---
 
-*Note: This is a demonstration app. In a production environment, you would use a server (e.g., via tRPC or WebSockets) to synchronize key bundles and exchange ciphertext messages between clients.*
+*Note: This is a demonstration app. In a production environment, you would use a server (e.g., via tRPC or WebSockets) to synchronise key bundles and exchange ciphertext messages between clients.*

@@ -65,7 +65,7 @@ const identityKey = client.get_identity_public_key();
 
 ### State Persistence (IndexedDB)
 
-Methods to export and import serialized records for persistence:
+Methods to export and import serialised records for persistence:
 
 | Method | Description |
 |--------|-------------|
@@ -84,9 +84,9 @@ Methods to export and import serialized records for persistence:
 
 | Struct | Properties |
 |--------|------------|
-| `WasmPreKey` | `id`, `public_key`, `record` (serialized full record) |
-| `WasmSignedPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` |
-| `WasmKyberPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` |
+| `WasmPreKey` | `id`, `public_key`, `record` (serialised full record) |
+| `WasmSignedPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` (serialised full record) |
+| `WasmKyberPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` (serialised full record) |
 | `WasmCiphertext` | `message_type`, `body` |
 | `WasmSafetyNumber` | `displayable` (string), `scannable` (bytes) |
 
@@ -135,7 +135,7 @@ export default defineConfig({
 });
 ```
 
-## License
+## Licence
 
 AGPL-3.0 - See [LICENSE](LICENSE)
 
