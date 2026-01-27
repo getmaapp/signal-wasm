@@ -161,4 +161,4 @@ This package is not affiliated with or endorsed by Signal Technology Foundation.
 
 ## Acknowledgements
 
-This project was created with the assistance of [Antigravity](https://antigravity.ai).
+This project was created with the assistance of [Google Antigravity](https://antigravity.google/).
