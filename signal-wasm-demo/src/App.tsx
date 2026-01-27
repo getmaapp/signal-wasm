@@ -1,16 +1,15 @@
+import { useCallback, useRef, useState } from "react";
 import init, {
   generate_random_bytes,
   generate_uuid,
   message_type_pre_key,
   message_type_signal,
   SignalClient,
-  uuid_to_string,
   WasmKyberPreKey,
   WasmPreKey,
   WasmSafetyNumber,
   WasmSignedPreKey,
-} from "libsignal-wasm";
-import { useCallback, useRef, useState } from "react";
+} from "signal-wasm";
 import "./App.css";
 import {
   clearStorage,
@@ -60,24 +59,17 @@ function App() {
   // We'll just replace the first chars of a template UUID with the name hex or similar,
   // or just keep the hardcoded ones if names match defaults, otherwise random.
   const getUuidForName = (name: string) => {
-    if (name === "Alice") return "00000000-0000-4000-a000-000000000001";
-    if (name === "Bob") return "00000000-0000-4000-a000-000000000002";
-    // Fallback: This is not a valid UUID generator, but for this demo input we'll stick to the hardcoded ones
-    // or assume the user inputs a valid UUID if they change it.
-    // To keep it simple for the e2e test request: "user input field for username".
-    // We will just map the name to the hardcoded UUIDs for now to ensure the E2E test passes easily
-    // without complex UUID logic, or we can use the library's generate_uuid if we want valid ones.
-    // Let's stick to the mapped ones for the specific E2E request "replace hard coded".
-    return name === "Alice"
-      ? "00000000-0000-4000-a000-000000000001"
-      : "00000000-0000-4000-a000-000000000002";
+    // Testing arbitrary Firebase-style UIDs
+    if (name === "Alice") return "alice_firebase_uid_123";
+    if (name === "Bob") return "bob_firebase_uid_456";
+    return name; // Allow user to type whatever
   };
 
   // Create/Restore client (Alice)
   const createClient = async () => {
     const uuid = getUuidForName(aliceName);
     try {
-      let alice = await loadIdentity(uuid);
+      const alice = await loadIdentity(uuid);
       let newClient: SignalClient;
 
       if (alice) {
@@ -90,7 +82,7 @@ function App() {
           alice.deviceId,
           alice.nextPreKeyId,
           alice.nextSignedPreKeyId,
-          alice.nextKyberPreKeyId
+          alice.nextKyberPreKeyId,
         );
         log("success", `✅ ${aliceName} restored from storage`);
         await ensureKeys(newClient);
@@ -111,7 +103,7 @@ function App() {
   const createBobClient = async () => {
     const uuid = getUuidForName(bobName);
     try {
-      let bob = await loadIdentity(uuid);
+      const bob = await loadIdentity(uuid);
       let newClient: SignalClient;
 
       if (bob) {
@@ -124,7 +116,7 @@ function App() {
           bob.deviceId,
           bob.nextPreKeyId,
           bob.nextSignedPreKeyId,
-          bob.nextKyberPreKeyId
+          bob.nextKyberPreKeyId,
         );
         log("success", `✅ ${bobName} restored from storage`);
         await ensureKeys(newClient);
@@ -172,7 +164,7 @@ function App() {
         },
       ]);
     },
-    []
+    [],
   );
 
   // Initialise WASM & DB
@@ -261,8 +253,8 @@ function App() {
             privateKeyLength: keyPair.private_key.length,
           },
           null,
-          2
-        )
+          2,
+        ),
       );
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -276,7 +268,7 @@ function App() {
     try {
       log(
         "info",
-        `Generating 10 PreKeys for ${target.get_local_uuid().slice(-4)}...`
+        `Generating 10 PreKeys for ${target.get_local_uuid().slice(-4)}...`,
       );
       const prekeys = target.generate_pre_keys(10) as WasmPreKey[];
 
@@ -301,8 +293,8 @@ function App() {
             publicKey: toHexTruncated(pk.public_key),
           })),
           null,
-          2
-        ) + `\n... and ${prekeys.length - 3} more`
+          2,
+        ) + `\n... and ${prekeys.length - 3} more`,
       );
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -338,8 +330,8 @@ function App() {
             timestamp: new Date(Number(spk.timestamp)).toISOString(),
           },
           null,
-          2
-        )
+          2,
+        ),
       );
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -375,8 +367,8 @@ function App() {
             signatureLength: kpk.signature.length,
           },
           null,
-          2
-        )
+          2,
+        ),
       );
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -395,7 +387,7 @@ function App() {
       const bobUuid = bobClient.get_local_uuid();
       const safetyNumber = client.generate_safety_number(
         bobUuid,
-        bobPubKey
+        bobPubKey,
       ) as WasmSafetyNumber;
       log(
         "success",
@@ -406,8 +398,8 @@ function App() {
             scannableLength: safetyNumber.scannable.length,
           },
           null,
-          2
-        )
+          2,
+        ),
       );
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -428,7 +420,7 @@ function App() {
   const generateUUID = () => {
     try {
       const uuidBytes = generate_uuid();
-      const uuidStr = uuid_to_string(uuidBytes);
+      const uuidStr = toHex(uuidBytes);
       log("data", "🆔 Generated UUID", uuidStr);
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -446,8 +438,8 @@ function App() {
           PREKEY_MESSAGE: message_type_pre_key(),
         },
         null,
-        2
-      )
+        2,
+      ),
     );
   };
 
@@ -455,7 +447,8 @@ function App() {
   // Export/import session demo
   const exportImportDemo = async () => {
     if (!client) return;
-    const BOB_UUID = "00000000-0000-4000-a000-000000000002";
+    if (!client) return;
+    const BOB_UUID = "bob_firebase_uid_456";
     try {
       log("info", `Testing session export for Bob (${BOB_UUID.slice(-4)})...`);
       const exported = await client.export_session(BOB_UUID, 1);
@@ -464,7 +457,7 @@ function App() {
         "Session export result",
         exported
           ? `✅ ${exported.length} bytes exported`
-          : "⚠️ null (No active session with Bob)"
+          : "⚠️ null (No active session with Bob)",
       );
     } catch (e) {
       log("error", `Failed: ${e}`);
@@ -519,7 +512,7 @@ function App() {
         oneTimePreKey.publicKey,
         kyberPreKey.id,
         kyberPreKey.publicKey,
-        kyberPreKey.signature
+        kyberPreKey.signature,
       );
 
       // 3. Persist Alice's session state
@@ -549,7 +542,7 @@ function App() {
       const ciphertext = await client.encrypt_message(
         bobUuid,
         bobDevId,
-        plaintext
+        plaintext,
       );
 
       // Persist updated session
@@ -566,11 +559,11 @@ function App() {
       log(
         "data",
         `Encrypted to Bob (Type ${ciphertext.message_type})`,
-        toHexTruncated(ciphertext.body)
+        toHexTruncated(ciphertext.body),
       );
 
       // Store for Bob to pick up
-      (window as any).__lastMessage = {
+      window.__lastMessage = {
         ciphertext: ciphertext.body,
         type: ciphertext.message_type,
         senderUuid: client.get_local_uuid(),
@@ -584,7 +577,7 @@ function App() {
   const decryptMessage = async () => {
     if (!bobClient) return;
     try {
-      const msg = (window as any).__lastMessage;
+      const msg = window.__lastMessage;
       if (!msg) {
         log("error", "No message to decrypt");
         return;
@@ -594,13 +587,13 @@ function App() {
         msg.senderUuid,
         msg.senderDeviceId,
         msg.ciphertext,
-        msg.type
+        msg.type,
       );
 
       // Persist Bob's updated session
       const session = await bobClient.export_session(
         msg.senderUuid,
-        msg.senderDeviceId
+        msg.senderDeviceId,
       );
       if (session) {
         await saveSession({
@@ -614,7 +607,7 @@ function App() {
       log(
         "success",
         `🔓 Decrypted from Alice`,
-        new TextDecoder().decode(plaintext)
+        new TextDecoder().decode(plaintext),
       );
     } catch (e) {
       log("error", `Decrypt failed: ${e}`);
@@ -628,28 +621,28 @@ function App() {
   const createGroupSession = async () => {
     if (!client) return;
     try {
-      const groupDistId = generate_uuid(); // Unique ID for this group session (SenderKeyName)
+      const groupDistId = "team:general-chat-1"; // Testing arbitrary string ID (mapped to UUID v5 internally)
       const skdm = await client.create_sender_key_distribution(groupDistId);
 
       // Persist Alice's SenderKey state
       const record = await client.export_sender_key(
         client.get_local_uuid(),
         1,
-        groupDistId
+        groupDistId,
       );
       if (record) {
         await saveSenderKey({
           localUuid: client.get_local_uuid(),
           remoteUuid: client.get_local_uuid(), // Self
           remoteDeviceId: 1,
-          distributionId: uuid_to_string(groupDistId),
+          distributionId: groupDistId,
           record,
         });
       }
 
       log("data", "Created Group Distribution", toHexTruncated(skdm));
-      (window as any).__groupDistId = groupDistId;
-      (window as any).__lastInfoMessage = {
+      window.__groupDistId = groupDistId;
+      window.__lastInfoMessage = {
         senderUuid: client.get_local_uuid(),
         senderDeviceId: client.get_local_device_id(),
         distMessage: skdm,
@@ -662,9 +655,9 @@ function App() {
   const processGroupSession = async () => {
     if (!bobClient) return;
     try {
-      const info = (window as any).__lastInfoMessage;
-      const groupDistId = (window as any).__groupDistId;
-      if (!info) {
+      const info = window.__lastInfoMessage;
+      const groupDistId = window.__groupDistId;
+      if (!info || !groupDistId) {
         log("error", "No distribution message found");
         return;
       }
@@ -672,21 +665,21 @@ function App() {
       await bobClient.process_sender_key_distribution(
         info.senderUuid,
         info.senderDeviceId,
-        info.distMessage
+        info.distMessage,
       );
 
       // Persist Bob's sender key state
       const record = await bobClient.export_sender_key(
         info.senderUuid,
         info.senderDeviceId,
-        groupDistId
+        groupDistId,
       );
       if (record) {
         await saveSenderKey({
           localUuid: bobClient.get_local_uuid(),
           remoteUuid: info.senderUuid,
           remoteDeviceId: info.senderDeviceId,
-          distributionId: uuid_to_string(groupDistId),
+          distributionId: groupDistId,
           record,
         });
       }
@@ -700,7 +693,7 @@ function App() {
   const encryptGroupMessage = async () => {
     if (!client) return;
     try {
-      const groupDistId = (window as any).__groupDistId;
+      const groupDistId = window.__groupDistId;
       if (!groupDistId) {
         log("error", "No group session");
         return;
@@ -709,28 +702,28 @@ function App() {
       const plaintext = new TextEncoder().encode("Hello Group! 📢");
       const ciphertext = await client.encrypt_group_message(
         groupDistId,
-        plaintext
+        plaintext,
       );
 
       // Persist Alice's updated state (chain advanced)
       const record = await client.export_sender_key(
         client.get_local_uuid(),
         1,
-        groupDistId
+        groupDistId,
       );
       if (record) {
         await saveSenderKey({
           localUuid: client.get_local_uuid(),
           remoteUuid: client.get_local_uuid(),
           remoteDeviceId: 1,
-          distributionId: uuid_to_string(groupDistId),
+          distributionId: groupDistId,
           record,
         });
       }
 
       log("data", "Encrypted Group Msg", toHexTruncated(ciphertext));
 
-      (window as any).__lastGroupMessage = {
+      window.__lastGroupMessage = {
         ciphertext,
         senderUuid: client.get_local_uuid(),
         senderDeviceId: 1,
@@ -743,7 +736,7 @@ function App() {
   const decryptGroupMessage = async () => {
     if (!bobClient) return;
     try {
-      const msg = (window as any).__lastGroupMessage;
+      const msg = window.__lastGroupMessage;
       if (!msg) {
         log("error", "No group message");
         return;
@@ -752,23 +745,27 @@ function App() {
       const plaintext = await bobClient.decrypt_group_message(
         msg.senderUuid,
         msg.senderDeviceId,
-        msg.ciphertext
+        msg.ciphertext,
       );
 
       // Persist Bob's state (don't usually need to for decrypt unless loose Ratchet, but good practice)
       // Note: Sender Keys don't ratchet on decrypt in the same way, but let's be safe.
-      const groupDistId = (window as any).__groupDistId;
+      const groupDistId = window.__groupDistId;
+      if (!groupDistId) {
+        log("error", "No group session ID");
+        return;
+      }
       const record = await bobClient.export_sender_key(
         msg.senderUuid,
         msg.senderDeviceId,
-        groupDistId
+        groupDistId,
       );
       if (record) {
         await saveSenderKey({
           localUuid: bobClient.get_local_uuid(),
           remoteUuid: msg.senderUuid,
           remoteDeviceId: msg.senderDeviceId,
-          distributionId: uuid_to_string(groupDistId),
+          distributionId: groupDistId,
           record,
         });
       }
@@ -776,7 +773,7 @@ function App() {
       log(
         "success",
         "📢 Group Msg Decrypted",
-        new TextDecoder().decode(plaintext)
+        new TextDecoder().decode(plaintext),
       );
     } catch (e) {
       log("error", `Group decrypt failed: ${e}`);

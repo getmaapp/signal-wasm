@@ -92,12 +92,14 @@ const MIGRATIONS: ((db: IDBPDatabase<SignalWasmDemoDB>) => void)[] = [
   },
   // v3: Breaking change to add 'record' field to prekeys (re-create stores)
   (db) => {
-    ["prekeys", "signed_prekeys", "kyber_prekeys"].forEach((name) => {
-      if (db.objectStoreNames.contains(name as any)) {
-        db.deleteObjectStore(name as any);
-      }
-      db.createObjectStore(name as any, { keyPath: ["uuid", "id"] });
-    });
+    (["prekeys", "signed_prekeys", "kyber_prekeys"] as const).forEach(
+      (name) => {
+        if (db.objectStoreNames.contains(name)) {
+          db.deleteObjectStore(name);
+        }
+        db.createObjectStore(name, { keyPath: ["uuid", "id"] });
+      },
+    );
   },
 ];
 
@@ -127,7 +129,7 @@ export const initDB = () => {
 // --- Identity ---
 
 export async function saveIdentity(
-  data: SignalWasmDemoDB["identity"]["value"]
+  data: SignalWasmDemoDB["identity"]["value"],
 ) {
   const db = await initDB();
   await db.put("identity", data);
@@ -163,7 +165,7 @@ export async function loadPreKeys(uuid: string) {
 // --- Signed PreKeys ---
 
 export async function saveSignedPreKey(
-  data: SignalWasmDemoDB["signed_prekeys"]["value"]
+  data: SignalWasmDemoDB["signed_prekeys"]["value"],
 ) {
   const db = await initDB();
   await db.put("signed_prekeys", data);
@@ -178,7 +180,7 @@ export async function loadSignedPreKeys(uuid: string) {
 // --- Kyber PreKeys ---
 
 export async function saveKyberPreKey(
-  data: SignalWasmDemoDB["kyber_prekeys"]["value"]
+  data: SignalWasmDemoDB["kyber_prekeys"]["value"],
 ) {
   const db = await initDB();
   await db.put("kyber_prekeys", data);
@@ -200,7 +202,7 @@ export async function saveSession(data: SignalWasmDemoDB["sessions"]["value"]) {
 export async function loadSession(
   localUuid: string,
   remoteUuid: string,
-  remoteDeviceId: number
+  remoteDeviceId: number,
 ) {
   const db = await initDB();
   return db.get("sessions", [localUuid, remoteUuid, remoteDeviceId]);
@@ -219,7 +221,7 @@ export async function clearStorage() {
 // --- Sender Keys ---
 
 export async function saveSenderKey(
-  data: SignalWasmDemoDB["sender_keys"]["value"]
+  data: SignalWasmDemoDB["sender_keys"]["value"],
 ) {
   const db = await initDB();
   await db.put("sender_keys", data);
@@ -229,7 +231,7 @@ export async function loadSenderKey(
   localUuid: string,
   remoteUuid: string,
   remoteDeviceId: number,
-  distributionId: string
+  distributionId: string,
 ) {
   const db = await initDB();
   return db.get("sender_keys", [

@@ -1,6 +1,6 @@
 [package]
 name = "signal-wasm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"
 license = "AGPL-3.0-only"
@@ -44,7 +44,7 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 futures = { version = "0.3" }
 
 # UUID handling
-uuid = { version = "1.5", features = ["v4", "serde", "js"] }
+uuid = { version = "1.5", features = ["v4", "v5", "serde", "js"] }
 
 # For zeroising secrets
 zeroize = { version = "1.7", features = ["derive"] }

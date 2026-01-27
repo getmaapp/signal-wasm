@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check": "tsc -b",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "idb": "^8.0.3",
-    "libsignal-wasm": "file:./pkg",
+    "signal-wasm": "file:./src/wasm",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },

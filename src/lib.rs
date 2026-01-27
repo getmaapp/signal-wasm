@@ -115,10 +115,15 @@ fn make_device_id(id: u32) -> Result<DeviceId, JsValue> {
     DeviceId::try_from(id).map_err(|_| JsValue::from_str("Invalid device ID (must be 1-127)"))
 }
 
-/// Validate UUID format
-fn validate_uuid(s: &str) -> Result<(), JsValue> {
-    uuid::Uuid::parse_str(s).map_err(|_| JsValue::from_str("Invalid UUID format"))?;
-    Ok(())
+/// Map a string Group ID to a deterministic UUID.
+/// If valid UUID, return it. If arbitrary string, generate UUID v5.
+fn map_group_id(id: &str) -> uuid::Uuid {
+    if let Ok(uuid) = uuid::Uuid::parse_str(id) {
+        uuid
+    } else {
+        // Use DNS namespace to deterministically map arbitrary strings (e.g. "team:123") to UUIDs
+        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, id.as_bytes())
+    }
 }
 
 fn now_timestamp() -> Timestamp {
@@ -338,8 +343,7 @@ impl SignalClient {
     /// Create a new SignalClient with a fresh identity.
     #[wasm_bindgen(constructor)]
     pub fn new(local_uuid: &str, local_device_id: u32) -> Result<SignalClient, JsValue> {
-        // Validate UUID format
-        validate_uuid(local_uuid)?;
+        // Validation removed to support Firebase UIDs and arbitrary strings
 
         let device_id = make_device_id(local_device_id)?;
         let mut rng = rand::rng();
@@ -779,13 +783,9 @@ impl SignalClient {
     #[wasm_bindgen]
     pub async fn create_sender_key_distribution(
         &mut self,
-        distribution_id: Vec<u8>,
+        distribution_id: String,
     ) -> Result<Vec<u8>, JsValue> {
-        if distribution_id.len() != 16 {
-            return Err(JsValue::from_str("distribution_id must be 16 bytes (UUID)"));
-        }
-
-        let dist_id = uuid::Uuid::from_slice(&distribution_id).map_err(to_js_error)?;
+        let dist_id = map_group_id(&distribution_id);
         let address = ProtocolAddress::new(self.local_uuid.clone(), self.local_device_id);
 
         let mut rng = rand::rng();
@@ -825,14 +825,10 @@ impl SignalClient {
     #[wasm_bindgen]
     pub async fn encrypt_group_message(
         &mut self,
-        distribution_id: Vec<u8>,
+        distribution_id: String,
         plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, JsValue> {
-        if distribution_id.len() != 16 {
-            return Err(JsValue::from_str("distribution_id must be 16 bytes (UUID)"));
-        }
-
-        let dist_id = uuid::Uuid::from_slice(&distribution_id).map_err(to_js_error)?;
+        let dist_id = map_group_id(&distribution_id);
         let address = ProtocolAddress::new(self.local_uuid.clone(), self.local_device_id);
 
         let mut rng = rand::rng();
@@ -1016,15 +1012,11 @@ impl SignalClient {
         &mut self,
         group_member_uuid: String,
         device_id: u32,
-        distribution_id: Vec<u8>,
+        distribution_id: String,
     ) -> Result<Option<Vec<u8>>, JsValue> {
-        if distribution_id.len() != 16 {
-            return Err(JsValue::from_str("distribution_id must be 16 bytes"));
-        }
-
         let dev_id = make_device_id(device_id)?;
         let address = ProtocolAddress::new(group_member_uuid, dev_id);
-        let dist_id = uuid::Uuid::from_slice(&distribution_id).map_err(to_js_error)?;
+        let dist_id = map_group_id(&distribution_id);
 
         match self
             .sender_key_store
@@ -1043,16 +1035,12 @@ impl SignalClient {
         &mut self,
         group_member_uuid: String,
         device_id: u32,
-        distribution_id: Vec<u8>,
+        distribution_id: String,
         record_bytes: Vec<u8>,
     ) -> Result<(), JsValue> {
-        if distribution_id.len() != 16 {
-            return Err(JsValue::from_str("distribution_id must be 16 bytes"));
-        }
-
         let dev_id = make_device_id(device_id)?;
         let address = ProtocolAddress::new(group_member_uuid, dev_id);
-        let dist_id = uuid::Uuid::from_slice(&distribution_id).map_err(to_js_error)?;
+        let dist_id = map_group_id(&distribution_id);
         let record = SenderKeyRecord::deserialize(&record_bytes).map_err(to_js_error)?;
 
         self.sender_key_store
