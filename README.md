@@ -10,7 +10,7 @@
 
 - 🔐 **End-to-End Encryption** - Signal Protocol (X3DH + Double Ratchet)
 - 🛡️ **Post-Quantum Ready** - Kyber1024 (PQXDH) support
-- 👥 **Group Messaging** - Sender Keys for efficient group chats
+- 👥 **Group Messaging** - Sender Keys (GV1) and Private Groups (GV2)
 - 🆔 **Flexible Identities** - Support for Arbitrary Strings (Firebase UIDs) & Deterministic Group UUIDs (Stream Chat)
 - 🔢 **Safety Numbers** - Identity verification
 - 💾 **Serialisation** - Export/import for IndexedDB persistence
@@ -46,24 +46,29 @@ const identityKey = client.get_identity_public_key();
 
 ### SignalClient
 
-| Method                         | Description                                            |
-| ------------------------------ | ------------------------------------------------------ |
-| `new(client_id, deviceId)`     | Create a new client with string ID (e.g. Firebase UID) |
-| `restore(...)`                 | Restore client identity from saved data                |
-| `generate_pre_keys(count)`     | Generate one-time PreKeys                              |
-| `generate_signed_pre_key()`    | Generate signed PreKey                                 |
-| `generate_kyber_pre_key()`     | Generate Kyber PreKey (PQXDH)                          |
-| `process_pre_key_bundle(...)`  | Establish session from bundle                          |
-| `encrypt_message(...)`         | Encrypt 1:1 message                                    |
-| `decrypt_message(...)`         | Decrypt 1:1 message                                    |
-| `create_sender_key_dist(...)`  | Create group key distribution message                  |
-| `encrypt_group_message(...)`   | Encrypt group message                                  |
-| `decrypt_group_message(...)`   | Decrypt group message                                  |
-| `generate_safety_number(...)`  | Generate safety number for verification                |
-| `verify_safety_number(...)`    | Verify a scanned safety number                         |
-| `get_next_pre_key_id()`        | Get next PreKey ID                                     |
-| `get_next_signed_pre_key_id()` | Get next Signed PreKey ID                              |
-| `get_next_kyber_pre_key_id()`  | Get next Kyber PreKey ID                               |
+| Method                              | Description                                            |
+| ----------------------------------- | ------------------------------------------------------ |
+| `new(client_id, deviceId)`          | Create a new client with string ID (e.g. Firebase UID) |
+| `restore(...)`                      | Restore client identity from saved data                |
+| `generate_pre_keys(count)`          | Generate one-time PreKeys                              |
+| `generate_signed_pre_key()`         | Generate signed PreKey                                 |
+| `generate_kyber_pre_key()`          | Generate Kyber PreKey (PQXDH)                          |
+| `process_pre_key_bundle(...)`       | Establish session from bundle                          |
+| `encrypt_message(...)`              | Encrypt 1:1 message                                    |
+| `decrypt_message(...)`              | Decrypt 1:1 message                                    |
+| `create_sender_key_dist(...)`       | Create group key distribution message                  |
+| `encrypt_group_message(...)`        | Encrypt group message                                  |
+| `decrypt_group_message(...)`        | Decrypt group message                                  |
+| `generate_safety_number(...)`       | Generate safety number for verification                |
+| `verify_safety_number(...)`         | Verify a scanned safety number                         |
+| `get_next_pre_key_id()`             | Get next PreKey ID                                     |
+| `get_next_signed_pre_key_id()`      | Get next Signed PreKey ID                              |
+| `get_next_kyber_pre_key_id()`       | Get next Kyber PreKey ID                               |
+| **GV2 (Private Groups)**            |                                                        |
+| `WasmGroupMasterKey::generate()`    | Create a fresh Group Master Key                        |
+| `WasmGroupMasterKey::from_bytes(b)` | Restore Master Key from 32 bytes                       |
+| `master_key.derive_identifier()`    | Get 32-byte Group Identifier                           |
+| `master_key.derive_secret_params()` | Derive Secret Params for invites                       |
 
 ### State Persistence (IndexedDB)
 
@@ -84,13 +89,16 @@ Methods to export and import serialised records for persistence:
 
 ### Data Structures
 
-| Struct             | Properties                                                                      |
-| ------------------ | ------------------------------------------------------------------------------- |
-| `WasmPreKey`       | `id`, `public_key`, `record` (serialised full record)                           |
-| `WasmSignedPreKey` | `id`, `public_key`, `signature`, `timestamp`, `record` (serialised full record) |
-| `WasmKyberPreKey`  | `id`, `public_key`, `signature`, `timestamp`, `record` (serialised full record) |
-| `WasmCiphertext`   | `message_type`, `body`                                                          |
-| `WasmSafetyNumber` | `displayable` (string), `scannable` (bytes)                                     |
+| Struct                  | Properties                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `WasmPreKey`            | `id`, `public_key`, `record` (serialised full record)                           |
+| `WasmSignedPreKey`      | `id`, `public_key`, `signature`, `timestamp`, `record` (serialised full record) |
+| `WasmKyberPreKey`       | `id`, `public_key`, `signature`, `timestamp`, `record` (serialised full record) |
+| `WasmCiphertext`        | `message_type`, `body`                                                          |
+| `WasmSafetyNumber`      | `displayable` (string), `scannable` (bytes)                                     |
+| `WasmGroupMasterKey`    | `serialize()` (32 bytes)                                                        |
+| `WasmGroupIdentifier`   | `serialize()` (32 bytes)                                                        |
+| `WasmGroupSecretParams` | `serialize()` (original master key bytes), `get_identifier()`                   |
 
 ### Utility Functions
 
@@ -122,7 +130,7 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-pack
 
 # Build
-wasm-pack build --target web --release
+wasm-pack build --target web --release --out-dir pkg --scope getmaapp
 ```
 
 ## Vite Configuration

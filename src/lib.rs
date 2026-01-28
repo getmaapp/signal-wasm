@@ -15,6 +15,9 @@
 #![deny(unsafe_code)]
 #![warn(clippy::unwrap_used)]
 
+use zkgroup::groups::{GroupMasterKey, GroupSecretParams};
+use zkgroup::GroupIdentifierBytes;
+
 use js_sys::Array;
 use subtle::ConstantTimeEq;
 use wasm_bindgen::prelude::*;
@@ -280,6 +283,107 @@ impl WasmSafetyNumber {
     #[wasm_bindgen(getter)]
     pub fn scannable(&self) -> Vec<u8> {
         self.scannable.clone()
+    }
+}
+
+// ============================================================================
+// SECTION 3.1: Group Messaging v2 (GV2) Types
+// ============================================================================
+
+/// Represents a Signal Group Master Key (GV2).
+/// The root secret for a private group.
+#[wasm_bindgen]
+pub struct WasmGroupMasterKey {
+    inner: GroupMasterKey,
+    bytes: [u8; 32],
+}
+
+#[wasm_bindgen]
+impl WasmGroupMasterKey {
+    /// Generate a fresh random Group Master Key.
+    #[wasm_bindgen]
+    pub fn generate() -> WasmGroupMasterKey {
+        let mut bytes = [0u8; 32];
+        let mut rng = rand::rng();
+        rand::prelude::Rng::fill(&mut rng, &mut bytes);
+        WasmGroupMasterKey {
+            inner: GroupMasterKey::new(bytes),
+            bytes,
+        }
+    }
+
+    /// Create from existing 32-byte array.
+    #[wasm_bindgen]
+    pub fn from_bytes(bytes: &[u8]) -> Result<WasmGroupMasterKey, JsValue> {
+        let array: [u8; 32] = bytes.try_into().map_err(|_| JsValue::from_str("Invalid key length (must be 32 bytes)"))?;
+        Ok(WasmGroupMasterKey {
+            inner: GroupMasterKey::new(array),
+            bytes: array,
+        })
+    }
+
+    /// Get the raw 32 bytes of the Master Key.
+    #[wasm_bindgen(getter)]
+    pub fn serialize(&self) -> Vec<u8> {
+        self.bytes.to_vec()
+    }
+
+    /// Derive the Group Secret Params.
+    #[wasm_bindgen]
+    pub fn derive_secret_params(&self) -> WasmGroupSecretParams {
+        WasmGroupSecretParams {
+            inner: GroupSecretParams::derive_from_master_key(self.inner),
+            master_key_bytes: self.bytes,
+        }
+    }
+
+    /// Derive the Group Identifier.
+    #[wasm_bindgen]
+    pub fn derive_identifier(&self) -> WasmGroupIdentifier {
+        let params = GroupSecretParams::derive_from_master_key(self.inner);
+        WasmGroupIdentifier {
+            inner: params.get_group_identifier(),
+        }
+    }
+}
+
+/// Represents a Signal Group Identifier (GV2).
+#[wasm_bindgen]
+pub struct WasmGroupIdentifier {
+    inner: GroupIdentifierBytes,
+}
+
+#[wasm_bindgen]
+impl WasmGroupIdentifier {
+    /// Get the raw 32 bytes of the Group ID.
+    #[wasm_bindgen(getter)]
+    pub fn serialize(&self) -> Vec<u8> {
+        self.inner.to_vec()
+    }
+}
+
+/// Represents Signal Group Secret Params (GV2).
+/// Used for joining and inviting.
+#[wasm_bindgen]
+pub struct WasmGroupSecretParams {
+    inner: GroupSecretParams,
+    master_key_bytes: [u8; 32],
+}
+
+#[wasm_bindgen]
+impl WasmGroupSecretParams {
+    /// Get the raw 32 bytes of the Master Key (from which these params are derived).
+    #[wasm_bindgen(getter)]
+    pub fn serialize(&self) -> Vec<u8> {
+        self.master_key_bytes.to_vec()
+    }
+
+    /// Get the Group Identifier.
+    #[wasm_bindgen]
+    pub fn get_identifier(&self) -> WasmGroupIdentifier {
+        WasmGroupIdentifier {
+            inner: self.inner.get_group_identifier(),
+        }
     }
 }
 

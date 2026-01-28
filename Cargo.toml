@@ -30,6 +30,8 @@ serde_json = { version = "1.0.45" }
 libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
 libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
 signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
+zkcredential = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
 
 # Randomness for browser (uses Web Crypto API)
 # We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:
@@ -79,3 +81,6 @@ panic = "abort"
 opt-level = 1
 debug = 2
 panic = "unwind"
+
+[patch.crates-io]
+curve25519-dalek = { git = "https://github.com/signalapp/curve25519-dalek", tag = "signal-curve25519-4.1.3" }

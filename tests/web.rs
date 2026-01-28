@@ -8,7 +8,7 @@
 #![cfg(target_arch = "wasm32")]
 
 extern crate wasm_bindgen_test;
-use signal_wasm::{init, SignalClient};
+use signal_wasm::{init, SignalClient, WasmGroupMasterKey};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 
@@ -71,7 +71,7 @@ async fn test_session_establishment_and_messaging() {
 
     // --- Bob Generates Keys ---
     let bob_pre_keys_array = bob.generate_pre_keys(1).unwrap();
-    let bob_pre_key_js = bob_pre_keys_array.get(0);
+    let _bob_pre_key_js = bob_pre_keys_array.get(0);
     // Cast to struct manually tailored for test or just rely on the fact we can't easily cast JS objects back in this test env without internal visibility.
     // However, we can use the `get_*` methods if we had the struct type available, but they are defined in lib.
     // For this integration test, we will extract IDs carefully or assume standard implementation.
@@ -201,13 +201,14 @@ async fn test_group_messaging() {
     let alice_uuid = "00000000-0000-0000-0000-00000000000A";
     let bob_uuid = "00000000-0000-0000-0000-00000000000B";
     let group_id_bytes = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap(); // 16 bytes
+    let group_id_str = hex::encode(&group_id_bytes);
 
     let mut alice = create_test_client(alice_uuid, 1).unwrap();
     let mut bob = create_test_client(bob_uuid, 1).unwrap();
 
     // 1. Alice Creates Group (SenderKeyDistribution)
     let dist_msg = alice
-        .create_sender_key_distribution(group_id_bytes.clone())
+        .create_sender_key_distribution(group_id_str.clone())
         .await
         .expect("Failed to create sender key distribution");
 
@@ -219,7 +220,7 @@ async fn test_group_messaging() {
     // 3. Alice Encrypts to Group
     let plaintext = b"Group Hello";
     let group_cipher = alice
-        .encrypt_group_message(group_id_bytes.clone(), plaintext.to_vec())
+        .encrypt_group_message(group_id_str.clone(), plaintext.to_vec())
         .await
         .expect("Group encryption failed");
 
@@ -230,6 +231,29 @@ async fn test_group_messaging() {
         .expect("Group decryption failed");
 
     assert_eq!(decrypted, plaintext);
+}
+
+#[wasm_bindgen_test]
+async fn test_gv2_key_derivation() {
+    // 1. Generate Master Key
+    let master_key = WasmGroupMasterKey::generate();
+    assert_eq!(master_key.serialize().len(), 32);
+
+    // 2. Derive Identifier
+    let group_id = master_key.derive_identifier();
+    assert_eq!(group_id.serialize().len(), 32);
+
+    // 3. Derive Secret Params
+    let params = master_key.derive_secret_params();
+    assert_eq!(params.serialize().len(), 32);
+
+    // 4. Verification from bytes
+    let master_key_bytes = master_key.serialize();
+    let master_key_2 = WasmGroupMasterKey::from_bytes(&master_key_bytes).unwrap();
+    assert_eq!(master_key_2.serialize(), master_key_bytes);
+    
+    let group_id_2 = master_key_2.derive_identifier();
+    assert_eq!(group_id_2.serialize(), group_id.serialize());
 }
 
 #[wasm_bindgen_test]

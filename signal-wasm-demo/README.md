@@ -8,7 +8,7 @@ A React 19 / Vite application demonstrating the capabilities of `@getmaapp/signa
 - 📦 **Key Generation**: 1:1 PreKeys, Signed PreKeys, and Post-Quantum Kyber PreKeys.
 - 🤝 **Session Establishment**: Full X3DH/PQXDH handshake (simulated).
 - 💬 **1:1 Messaging**: Encrypting and decrypting messages using the Signal Double Ratchet.
-- 👨‍👩‍👧‍👦 **Group Messaging**: Sender Key based group encryption.
+- 👨‍👩‍👧‍👦 **Group Messaging**: Sender Key (GV1) and Private Group (GV2) management.
 - 🛡️ **Post-Quantum Crypto**: Integration of Kyber1024 for quantum-resistant handshakes.
 - 💾 **Persistence**: full state restoration from IndexedDB via `SignalClient.restore()`.
 - 🚥 **Activity Log**: Real-time visualisation of internal cryptographic operations.
@@ -40,18 +40,18 @@ npm run dev
 ```
 
 The app will be available at `http://localhost:5173`.
- 
- ## Testing (E2E)
- 
- We use **Playwright** to verify the full application lifecycle, from bundle loading to message decryption.
- 
- ```bash
- # Run E2E tests (headless)
- npx playwright test
- 
- # Open interactive test UI
- npx playwright test --ui
- ```
+
+## Testing (E2E)
+
+We use **Playwright** to verify the full application lifecycle, from bundle loading to message decryption.
+
+```bash
+# Run E2E tests (headless)
+npx playwright test
+
+# Open interactive test UI
+npx playwright test --ui
+```
 
 ## How it Works
 
@@ -62,4 +62,4 @@ The app will be available at `http://localhost:5173`.
 
 ---
 
-*Note: This is a demonstration app. In a production environment, you would use a server (e.g., via tRPC or WebSockets) to synchronise key bundles and exchange ciphertext messages between clients.*
+_Note: This is a demonstration app. In a production environment, you would use a server (e.g., via tRPC or WebSockets) to synchronise key bundles and exchange ciphertext messages between clients._
