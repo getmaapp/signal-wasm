@@ -27,11 +27,11 @@ serde-wasm-bindgen = "0.6"
 serde_json = { version = "1.0.45" }
 
 # Core libsignal crates (git dependencies for independent build)
-libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
-libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
-signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
-zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
-zkcredential = { git = "https://github.com/signalapp/libsignal", tag = "v0.86.11" }
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
+libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
+signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
+zkcredential = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
 
 # Randomness for browser (uses Web Crypto API)
 # We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:

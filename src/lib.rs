@@ -817,9 +817,11 @@ impl SignalClient {
         let address = ProtocolAddress::new(recipient_uuid, dev_id);
 
         let mut rng = rand::rng();
+        let local_address = ProtocolAddress::new(self.local_uuid.clone(), self.local_device_id);
         let ciphertext = message_encrypt(
             &plaintext,
             &address,
+            &local_address,
             &mut self.session_store,
             &mut self.identity_store,
             std::time::UNIX_EPOCH + std::time::Duration::from_millis(js_sys::Date::now() as u64),
@@ -863,9 +865,11 @@ impl SignalClient {
             }
         };
 
+        let local_address = ProtocolAddress::new(self.local_uuid.clone(), self.local_device_id);
         let plaintext = message_decrypt(
             &ciphertext_msg,
             &address,
+            &local_address,
             &mut self.session_store,
             &mut self.identity_store,
             &mut self.prekey_store,
