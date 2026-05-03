@@ -7,11 +7,6 @@ import wasm from 'vite-plugin-wasm';
 export default defineConfig({
   plugins: [react(), wasm(), topLevelAwait()],
   optimizeDeps: {
-    exclude: ['libsignal-wasm'],
-  },
-  server: {
-    fs: {
-      allow: ['..'],
-    },
+    exclude: ['@getmaapp/signal-wasm'],
   },
 });

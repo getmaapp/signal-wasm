@@ -32,7 +32,7 @@ import init, {
   WasmKyberPreKey,
   WasmCiphertext,
   WasmSafetyNumber,
-} from "signal-wasm";
+} from "@getmaapp/signal-wasm";
 import "./App.css";
 import {
   clearStorage,
