@@ -1,6 +1,6 @@
 [package]
 name = "signal-wasm"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"
 license = "AGPL-3.0-only"
@@ -27,11 +27,11 @@ serde-wasm-bindgen = "0.6"
 serde_json = { version = "1.0.45" }
 
 # Core libsignal crates (git dependencies for independent build)
-libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
-libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
-signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
-zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
-zkcredential = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0" }
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
+libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
+signal-crypto = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
+zkcredential = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
 
 # Randomness for browser (uses Web Crypto API)
 # We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:
@@ -42,8 +42,6 @@ zkcredential = { git = "https://github.com/signalapp/libsignal", tag = "v0.92.0"
 getrandom_v02 = { package = "getrandom", version = "0.2", features = ["js"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
-# Async runtime for WASM
-futures = { version = "0.3" }
 
 # UUID handling
 uuid = { version = "1.5", features = ["v4", "v5", "serde", "js"] }

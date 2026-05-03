@@ -4,11 +4,34 @@ import init, {
   generate_uuid,
   message_type_pre_key,
   message_type_signal,
-  SignalClient,
-  WasmKyberPreKey,
+  PrivateKey,
+  PublicKey,
+  IdentityKeyPair,
+  ProtocolAddress,
+  InMemIdentityKeyStore,
+  InMemSessionStore,
+  InMemPreKeyStore,
+  InMemSignedPreKeyStore,
+  InMemKyberPreKeyStore,
+  InMemSenderKeyStore,
+  generatePreKeys,
+  generateSignedPreKey,
+  generateKyberPreKey,
+  generateRegistrationId,
+  generateSafetyNumber,
+  verifySafetyNumber,
+  processPreKeyBundle,
+  encryptMessage,
+  decryptMessage,
+  createSenderKeyDistribution,
+  processSenderKeyDistribution,
+  encryptGroupMessage,
+  decryptGroupMessage,
   WasmPreKey,
-  WasmSafetyNumber,
   WasmSignedPreKey,
+  WasmKyberPreKey,
+  WasmCiphertext,
+  WasmSafetyNumber,
 } from "signal-wasm";
 import "./App.css";
 import {
@@ -26,7 +49,6 @@ import {
   saveSignedPreKey,
 } from "./lib/storage";
 
-// Log entry type
 interface LogEntry {
   id: number;
   time: string;
@@ -35,7 +57,22 @@ interface LogEntry {
   data?: string;
 }
 
-// Hex encoding helper
+interface ClientState {
+  uuid: string;
+  deviceId: number;
+  identityKeyPair: IdentityKeyPair;
+  registrationId: number;
+  sessionStore: InMemSessionStore;
+  identityStore: InMemIdentityKeyStore;
+  prekeyStore: InMemPreKeyStore;
+  signedPrekeyStore: InMemSignedPreKeyStore;
+  kyberPrekeyStore: InMemKyberPreKeyStore;
+  senderKeyStore: InMemSenderKeyStore;
+  nextPreKeyId: number;
+  nextSignedPreKeyId: number;
+  nextKyberPreKeyId: number;
+}
+
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -48,107 +85,14 @@ const toHexTruncated = (bytes: Uint8Array, maxLen = 32): string => {
 
 function App() {
   const [wasmReady, setWasmReady] = useState(false);
-  const [client, setClient] = useState<SignalClient | null>(null);
-  const [bobClient, setBobClient] = useState<SignalClient | null>(null);
+  const [client, setClient] = useState<ClientState | null>(null);
+  const [bobClient, setBobClient] = useState<ClientState | null>(null);
   const [aliceName, setAliceName] = useState("Alice");
   const [bobName, setBobName] = useState("Bob");
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
-  // Helper to generate deterministic UUID from name (for demo purposes)
-  // In reality, this should be random, but for the demo we want repeatable identities given a name.
-  // We'll just replace the first chars of a template UUID with the name hex or similar,
-  // or just keep the hardcoded ones if names match defaults, otherwise random.
-  const getUuidForName = (name: string) => {
-    // Testing arbitrary Firebase-style UIDs
-    if (name === "Alice") return "alice_firebase_uid_123";
-    if (name === "Bob") return "bob_firebase_uid_456";
-    return name; // Allow user to type whatever
-  };
-
-  // Create/Restore client (Alice)
-  const createClient = async () => {
-    const uuid = getUuidForName(aliceName);
-    try {
-      const alice = await loadIdentity(uuid);
-      let newClient: SignalClient;
-
-      if (alice) {
-        log("info", `Restoring ${aliceName} from DB...`);
-        newClient = SignalClient.restore(
-          alice.identityPublic,
-          alice.identityPrivate,
-          alice.registrationId,
-          alice.uuid,
-          alice.deviceId,
-          alice.nextPreKeyId,
-          alice.nextSignedPreKeyId,
-          alice.nextKyberPreKeyId,
-        );
-        log("success", `✅ ${aliceName} restored from storage`);
-        await ensureKeys(newClient);
-      } else {
-        log("info", `Creating new ${aliceName} client...`);
-        newClient = new SignalClient(uuid, 1);
-        await persistIdentity(newClient);
-        log("success", `✅ ${aliceName} created & saved`);
-        await initializeKeys(newClient);
-      }
-      setClient(newClient);
-    } catch (e) {
-      log("error", `Failed to load ${aliceName}: ${e}`);
-    }
-  };
-
-  // Create/Restore Bob
-  const createBobClient = async () => {
-    const uuid = getUuidForName(bobName);
-    try {
-      const bob = await loadIdentity(uuid);
-      let newClient: SignalClient;
-
-      if (bob) {
-        log("info", `Restoring ${bobName} from DB...`);
-        newClient = SignalClient.restore(
-          bob.identityPublic,
-          bob.identityPrivate,
-          bob.registrationId,
-          bob.uuid,
-          bob.deviceId,
-          bob.nextPreKeyId,
-          bob.nextSignedPreKeyId,
-          bob.nextKyberPreKeyId,
-        );
-        log("success", `✅ ${bobName} restored from storage`);
-        await ensureKeys(newClient);
-      } else {
-        log("info", `Creating new ${bobName} client...`);
-        newClient = new SignalClient(uuid, 1);
-        await persistIdentity(newClient);
-        log("success", `✅ ${bobName} created & saved`);
-        await initializeKeys(newClient);
-      }
-      setBobClient(newClient);
-    } catch (e) {
-      log("error", `Failed to load ${bobName}: ${e}`);
-    }
-  };
-
-  // ... (keep initializeKeys and ensureKeys)
-
-  // ... (Update UI buttons to include inputs)
-  /* 
-     Ideally I would use multi_replace to target the State definition AND the JSX, 
-     but replace_file_content is safer for contiguous blocks. 
-     I'll start by adding the state variables at the top of App().
-  */
-
-  // WAITING FOR CONFIRMATION STRATEGY:
-  // I'll update the component step-by-step. First, state.
-
-  // Use ref for log ID to handle Strict Mode double-invocation correctly
   const logIdRef = useRef(0);
 
-  // Add log entry
   const log = useCallback(
     (type: LogEntry["type"], message: string, data?: string) => {
       const newId = logIdRef.current + 1;
@@ -167,7 +111,41 @@ function App() {
     [],
   );
 
-  // Initialise WASM & DB
+  const getUuidForName = (name: string) => {
+    // For this independent web app, identifiers can be any string
+    // (Firebase UIDs, usernames, etc.). We use them directly.
+    if (name === "Alice") return "alice_firebase_uid_123";
+    if (name === "Bob") return "bob_firebase_uid_456";
+    return name;
+  };
+
+  const createClientState = (
+    uuid: string,
+    deviceId: number,
+    identityKeyPair: IdentityKeyPair,
+    registrationId: number,
+    nextPreKeyId: number,
+    nextSignedPreKeyId: number,
+    nextKyberPreKeyId: number,
+  ): ClientState => {
+    const identityStore = new InMemIdentityKeyStore(identityKeyPair, registrationId);
+    return {
+      uuid,
+      deviceId,
+      identityKeyPair,
+      registrationId,
+      sessionStore: new InMemSessionStore(),
+      identityStore,
+      prekeyStore: new InMemPreKeyStore(),
+      signedPrekeyStore: new InMemSignedPreKeyStore(),
+      kyberPrekeyStore: new InMemKyberPreKeyStore(),
+      senderKeyStore: new InMemSenderKeyStore(),
+      nextPreKeyId,
+      nextSignedPreKeyId,
+      nextKyberPreKeyId,
+    };
+  };
+
   const initWasm = async () => {
     try {
       log("info", "Initialising WASM module...");
@@ -180,54 +158,130 @@ function App() {
     }
   };
 
-  const persistIdentity = async (c: SignalClient) => {
+  const persistIdentity = async (c: ClientState) => {
     try {
       await saveIdentity({
-        uuid: c.get_local_uuid(),
-        deviceId: c.get_local_device_id(),
-        registrationId: c.get_registration_id(),
-        identityPublic: c.get_identity_public_key(),
-        identityPrivate: c.get_identity_key_pair().private_key,
-        nextPreKeyId: c.get_next_pre_key_id(),
-        nextSignedPreKeyId: c.get_next_signed_pre_key_id(),
-        nextKyberPreKeyId: c.get_next_kyber_pre_key_id(),
+        uuid: c.uuid,
+        deviceId: c.deviceId,
+        registrationId: c.registrationId,
+        identityPublic: c.identityKeyPair.public_key().serialize(),
+        identityPrivate: c.identityKeyPair.private_key().serialize(),
+        nextPreKeyId: c.nextPreKeyId,
+        nextSignedPreKeyId: c.nextSignedPreKeyId,
+        nextKyberPreKeyId: c.nextKyberPreKeyId,
       });
     } catch (e) {
       log("error", `Failed to save identity: ${e}`);
     }
   };
 
-  const initializeKeys = async (c: SignalClient) => {
-    await generatePreKeys(c);
-    await generateSignedPreKey(c);
-    await generateKyberPreKey(c);
+  const createClient = async () => {
+    const uuid = getUuidForName(aliceName);
+    try {
+      const alice = await loadIdentity(uuid);
+      let newClient: ClientState;
+
+      if (alice) {
+        log("info", `Restoring ${aliceName} from DB...`);
+        const publicKey = PublicKey.deserialize(alice.identityPublic);
+        const privateKey = PrivateKey.deserialize(alice.identityPrivate);
+        const identityKeyPair = new IdentityKeyPair(publicKey, privateKey);
+        newClient = createClientState(
+          alice.uuid,
+          alice.deviceId,
+          identityKeyPair,
+          alice.registrationId,
+          alice.nextPreKeyId,
+          alice.nextSignedPreKeyId,
+          alice.nextKyberPreKeyId,
+        );
+        log("success", `✅ ${aliceName} restored from storage`);
+        await ensureKeys(newClient);
+      } else {
+        log("info", `Creating new ${aliceName} client...`);
+        const privateKey = PrivateKey.generate();
+        const publicKey = privateKey.getPublicKey();
+        const identityKeyPair = new IdentityKeyPair(publicKey, privateKey);
+        const registrationId = generateRegistrationId();
+        newClient = createClientState(uuid, 1, identityKeyPair, registrationId, 1, 1, 1);
+        await persistIdentity(newClient);
+        log("success", `✅ ${aliceName} created & saved`);
+        await initializeKeys(newClient);
+      }
+      setClient(newClient);
+    } catch (e) {
+      log("error", `Failed to load ${aliceName}: ${e}`);
+    }
   };
 
-  const ensureKeys = async (c: SignalClient) => {
-    const uuid = c.get_local_uuid();
-    const pks = await loadPreKeys(uuid);
-    const spks = await loadSignedPreKeys(uuid);
-    const kpks = await loadKyberPreKeys(uuid);
+  const createBobClient = async () => {
+    const uuid = getUuidForName(bobName);
+    try {
+      const bob = await loadIdentity(uuid);
+      let newClient: ClientState;
 
-    // Import existing keys into WASM memory
+      if (bob) {
+        log("info", `Restoring ${bobName} from DB...`);
+        const publicKey = PublicKey.deserialize(bob.identityPublic);
+        const privateKey = PrivateKey.deserialize(bob.identityPrivate);
+        const identityKeyPair = new IdentityKeyPair(publicKey, privateKey);
+        newClient = createClientState(
+          bob.uuid,
+          bob.deviceId,
+          identityKeyPair,
+          bob.registrationId,
+          bob.nextPreKeyId,
+          bob.nextSignedPreKeyId,
+          bob.nextKyberPreKeyId,
+        );
+        log("success", `✅ ${bobName} restored from storage`);
+        await ensureKeys(newClient);
+      } else {
+        log("info", `Creating new ${bobName} client...`);
+        const privateKey = PrivateKey.generate();
+        const publicKey = privateKey.getPublicKey();
+        const identityKeyPair = new IdentityKeyPair(publicKey, privateKey);
+        const registrationId = generateRegistrationId();
+        newClient = createClientState(uuid, 1, identityKeyPair, registrationId, 1, 1, 1);
+        await persistIdentity(newClient);
+        log("success", `✅ ${bobName} created & saved`);
+        await initializeKeys(newClient);
+      }
+      setBobClient(newClient);
+    } catch (e) {
+      log("error", `Failed to load ${bobName}: ${e}`);
+    }
+  };
+
+  const initializeKeys = async (c: ClientState) => {
+    await generatePreKeysForClient(c, 10);
+    await generateSignedPreKeyForClient(c);
+    await generateKyberPreKeyForClient(c);
+  };
+
+  const ensureKeys = async (c: ClientState) => {
+    const pks = await loadPreKeys(c.uuid);
+    const spks = await loadSignedPreKeys(c.uuid);
+    const kpks = await loadKyberPreKeys(c.uuid);
+
     if (pks.length > 0) {
       log("info", `Restoring ${pks.length} PreKeys from IDB...`);
       for (const pk of pks) {
-        if (pk.record) await c.import_pre_key(pk.id, pk.record);
+        if (pk.record) await c.prekeyStore.import_pre_key(pk.id, pk.record);
       }
     }
 
     if (spks.length > 0) {
       log("info", `Restoring ${spks.length} Signed PreKeys from IDB...`);
       for (const spk of spks) {
-        if (spk.record) await c.import_signed_pre_key(spk.id, spk.record);
+        if (spk.record) await c.signedPrekeyStore.import_signed_pre_key(spk.id, spk.record);
       }
     }
 
     if (kpks.length > 0) {
       log("info", `Restoring ${kpks.length} Kyber PreKeys from IDB...`);
       for (const kpk of kpks) {
-        if (kpk.record) await c.import_kyber_pre_key(kpk.id, kpk.record);
+        if (kpk.record) await c.kyberPrekeyStore.import_kyber_pre_key(kpk.id, kpk.record);
       }
     }
 
@@ -237,20 +291,20 @@ function App() {
     }
   };
 
-  // Get identity key pair
   const getIdentityKey = () => {
     if (!client) return;
     try {
-      const keyPair = client.get_identity_key_pair();
+      const keyPair = client.identityKeyPair;
       log(
         "data",
         "🔑 Identity Key Pair",
         JSON.stringify(
           {
-            publicKey: toHexTruncated(keyPair.public_key),
-            privateKey: toHexTruncated(keyPair.private_key),
-            publicKeyLength: keyPair.public_key.length,
-            privateKeyLength: keyPair.private_key.length,
+            publicKey: toHexTruncated(keyPair.public_key().serialize()),
+            // SECURITY: Never log private keys in production. This is demo-only.
+            privateKey: toHexTruncated(keyPair.private_key().serialize()),
+            publicKeyLength: keyPair.public_key().serialize().length,
+            privateKeyLength: keyPair.private_key().serialize().length,
           },
           null,
           2,
@@ -261,28 +315,29 @@ function App() {
     }
   };
 
-  // Generate PreKeys
-  const generatePreKeys = async (c?: SignalClient) => {
+  const generatePreKeysForClient = async (c: ClientState, count: number) => {
+    const startId = c.nextPreKeyId;
+    const prekeys = (await generatePreKeys(startId, count, c.prekeyStore)) as WasmPreKey[];
+    c.nextPreKeyId = startId + count;
+    await persistIdentity(c);
+
+    for (const pk of prekeys) {
+      await savePreKey({
+        uuid: c.uuid,
+        id: pk.id,
+        publicKey: pk.public_key,
+        record: pk.record,
+      });
+    }
+    return prekeys;
+  };
+
+  const handleGeneratePreKeys = async (c?: ClientState) => {
     const target = c || client;
     if (!target) return;
     try {
-      log(
-        "info",
-        `Generating 10 PreKeys for ${target.get_local_uuid().slice(-4)}...`,
-      );
-      const prekeys = target.generate_pre_keys(10) as WasmPreKey[];
-
-      // Persist
-      const uuid = target.get_local_uuid();
-      for (const pk of prekeys) {
-        await savePreKey({
-          uuid,
-          id: pk.id,
-          publicKey: pk.public_key,
-          record: pk.record,
-        });
-      }
-      await persistIdentity(target); // Update counters
+      log("info", `Generating 10 PreKeys for ${target.uuid.slice(-4)}...`);
+      const prekeys = await generatePreKeysForClient(target, 10);
 
       log(
         "success",
@@ -301,23 +356,29 @@ function App() {
     }
   };
 
-  // Generate Signed PreKey
-  const generateSignedPreKey = async (c?: SignalClient) => {
+  const generateSignedPreKeyForClient = async (c: ClientState) => {
+    const keyId = c.nextSignedPreKeyId;
+    const spk = (await generateSignedPreKey(keyId, c.identityKeyPair, c.signedPrekeyStore)) as WasmSignedPreKey;
+    c.nextSignedPreKeyId = keyId + 1;
+    await persistIdentity(c);
+
+    await saveSignedPreKey({
+      uuid: c.uuid,
+      id: spk.id,
+      publicKey: spk.public_key,
+      signature: spk.signature,
+      timestamp: Number(spk.timestamp),
+      record: spk.record,
+    });
+    return spk;
+  };
+
+  const handleGenerateSignedPreKey = async (c?: ClientState) => {
     const target = c || client;
     if (!target) return;
     try {
       log("info", "Generating Signed PreKey...");
-      const spk = target.generate_signed_pre_key() as WasmSignedPreKey;
-
-      await saveSignedPreKey({
-        uuid: target.get_local_uuid(),
-        id: spk.id,
-        publicKey: spk.public_key,
-        signature: spk.signature,
-        timestamp: Number(spk.timestamp),
-        record: spk.record,
-      });
-      await persistIdentity(target); // Update counters
+      const spk = await generateSignedPreKeyForClient(target);
 
       log(
         "success",
@@ -338,23 +399,29 @@ function App() {
     }
   };
 
-  // Generate Kyber PreKey
-  const generateKyberPreKey = async (c?: SignalClient) => {
+  const generateKyberPreKeyForClient = async (c: ClientState) => {
+    const keyId = c.nextKyberPreKeyId;
+    const kpk = (await generateKyberPreKey(keyId, c.identityKeyPair, c.kyberPrekeyStore)) as WasmKyberPreKey;
+    c.nextKyberPreKeyId = keyId + 1;
+    await persistIdentity(c);
+
+    await saveKyberPreKey({
+      uuid: c.uuid,
+      id: kpk.id,
+      publicKey: kpk.public_key,
+      signature: kpk.signature,
+      timestamp: Number(kpk.timestamp),
+      record: kpk.record,
+    });
+    return kpk;
+  };
+
+  const handleGenerateKyberPreKey = async (c?: ClientState) => {
     const target = c || client;
     if (!target) return;
     try {
       log("info", "Generating Kyber PreKey (PQXDH)...");
-      const kpk = target.generate_kyber_pre_key() as WasmKyberPreKey;
-
-      await saveKyberPreKey({
-        uuid: target.get_local_uuid(),
-        id: kpk.id,
-        publicKey: kpk.public_key,
-        signature: kpk.signature,
-        timestamp: Number(kpk.timestamp),
-        record: kpk.record,
-      });
-      await persistIdentity(target);
+      const kpk = await generateKyberPreKeyForClient(target);
 
       log(
         "success",
@@ -375,7 +442,6 @@ function App() {
     }
   };
 
-  // Generate Safety Number
   const generateSafetyNumber = () => {
     if (!client || !bobClient) {
       log("error", "Need both Alice and Bob clients");
@@ -383,10 +449,11 @@ function App() {
     }
     try {
       log("info", "Generating safety number...");
-      const bobPubKey = bobClient.get_identity_public_key();
-      const bobUuid = bobClient.get_local_uuid();
-      const safetyNumber = client.generate_safety_number(
-        bobUuid,
+      const bobPubKey = PublicKey.deserialize(bobClient.identityKeyPair.public_key().serialize());
+      const safetyNumber = generateSafetyNumber(
+        client.uuid,
+        client.identityKeyPair.public_key(),
+        bobClient.uuid,
         bobPubKey,
       ) as WasmSafetyNumber;
       log(
@@ -406,7 +473,6 @@ function App() {
     }
   };
 
-  // Random bytes demo
   const generateRandomBytes = () => {
     try {
       const bytes = generate_random_bytes(32);
@@ -416,7 +482,6 @@ function App() {
     }
   };
 
-  // UUID demo
   const generateUUID = () => {
     try {
       const uuidBytes = generate_uuid();
@@ -427,7 +492,6 @@ function App() {
     }
   };
 
-  // Message type constants
   const showMessageTypes = () => {
     log(
       "data",
@@ -443,15 +507,13 @@ function App() {
     );
   };
 
-  // Export/import session demo
-  // Export/import session demo
   const exportImportDemo = async () => {
     if (!client) return;
-    if (!client) return;
-    const BOB_UUID = "bob_firebase_uid_456";
+    const BOB_UUID = getUuidForName("Bob");
     try {
       log("info", `Testing session export for Bob (${BOB_UUID.slice(-4)})...`);
-      const exported = await client.export_session(BOB_UUID, 1);
+      const bobAddress = ProtocolAddress.new(BOB_UUID, 1);
+      const exported = await client.sessionStore.export_session(bobAddress);
       log(
         "data",
         "Session export result",
@@ -464,10 +526,6 @@ function App() {
     }
   };
 
-  // ----------------------------------------------------------------------
-  // 1:1 Messaging
-  // ----------------------------------------------------------------------
-
   const establishSession = async () => {
     if (!client || !bobClient) {
       log("error", "Need both clients");
@@ -476,11 +534,10 @@ function App() {
     try {
       log("info", "Establishing session (Alice -> Bob)...");
 
-      // 1. Alice fetches Bob's bundle (simulated from DB/Bob client)
-      const bobUuid = bobClient.get_local_uuid();
-      const bobDevId = bobClient.get_local_device_id();
-      const bobRegId = bobClient.get_registration_id();
-      const bobIdentity = bobClient.get_identity_public_key();
+      const bobUuid = bobClient.uuid;
+      const bobDevId = bobClient.deviceId;
+      const bobRegId = bobClient.registrationId;
+      const bobIdentity = bobClient.identityKeyPair.public_key().serialize();
 
       const bobSignedPreKeys = await loadSignedPreKeys(bobUuid);
       const bobKyberPreKeys = await loadKyberPreKeys(bobUuid);
@@ -495,31 +552,34 @@ function App() {
         return;
       }
 
-      const signedPreKey = bobSignedPreKeys[0]; // Just take first
+      const signedPreKey = bobSignedPreKeys[0];
       const kyberPreKey = bobKyberPreKeys[0];
       const oneTimePreKey = bobPreKeys[0];
 
-      // 2. Alice processes bundle
-      await client.process_pre_key_bundle(
-        bobUuid,
-        bobDevId,
+      const bobAddress = ProtocolAddress.new(bobUuid, bobDevId);
+      const aliceAddress = ProtocolAddress.new(client.uuid, client.deviceId);
+      const bobIdentityKey = PublicKey.deserialize(bobIdentity);
+      const signedPreKeyPub = PublicKey.deserialize(signedPreKey.publicKey);
+      await processPreKeyBundle(
+        bobAddress,
+        aliceAddress,
         bobRegId,
-        bobIdentity,
+        bobIdentityKey,
         signedPreKey.id,
-        signedPreKey.publicKey,
+        signedPreKeyPub,
         signedPreKey.signature,
         oneTimePreKey.id,
         oneTimePreKey.publicKey,
         kyberPreKey.id,
         kyberPreKey.publicKey,
         kyberPreKey.signature,
+        client.sessionStore,
+        client.identityStore,
       );
-
-      // 3. Persist Alice's session state
-      const serializedSession = await client.export_session(bobUuid, bobDevId);
+      const serializedSession = await client.sessionStore.export_session(bobAddress);
       if (serializedSession) {
         await saveSession({
-          localUuid: client.get_local_uuid(),
+          localUuid: client.uuid,
           remoteUuid: bobUuid,
           remoteDeviceId: bobDevId,
           record: serializedSession,
@@ -532,24 +592,28 @@ function App() {
     }
   };
 
-  const encryptMessage = async () => {
+  const encryptMsg = async () => {
     if (!client || !bobClient) return;
     try {
-      const bobUuid = bobClient.get_local_uuid();
-      const bobDevId = bobClient.get_local_device_id();
+      const bobUuid = bobClient.uuid;
+      const bobDevId = bobClient.deviceId;
       const plaintext = new TextEncoder().encode("Hello Bob! 🔒");
 
-      const ciphertext = await client.encrypt_message(
-        bobUuid,
-        bobDevId,
+      const bobAddress = ProtocolAddress.new(bobUuid, bobDevId);
+      const aliceAddress = ProtocolAddress.new(client.uuid, client.deviceId);
+
+      const ciphertext = await encryptMessage(
         plaintext,
+        bobAddress,
+        aliceAddress,
+        client.sessionStore,
+        client.identityStore,
       );
 
-      // Persist updated session
-      const session = await client.export_session(bobUuid, bobDevId);
+      const session = await client.sessionStore.export_session(bobAddress);
       if (session) {
         await saveSession({
-          localUuid: client.get_local_uuid(),
+          localUuid: client.uuid,
           remoteUuid: bobUuid,
           remoteDeviceId: bobDevId,
           record: session,
@@ -562,19 +626,18 @@ function App() {
         toHexTruncated(ciphertext.body),
       );
 
-      // Store for Bob to pick up
       window.__lastMessage = {
         ciphertext: ciphertext.body,
         type: ciphertext.message_type,
-        senderUuid: client.get_local_uuid(),
-        senderDeviceId: client.get_local_device_id(),
+        senderUuid: client.uuid,
+        senderDeviceId: client.deviceId,
       };
     } catch (e) {
       log("error", `Encrypt failed: ${e}`);
     }
   };
 
-  const decryptMessage = async () => {
+  const decryptMsg = async () => {
     if (!bobClient) return;
     try {
       const msg = window.__lastMessage;
@@ -583,21 +646,25 @@ function App() {
         return;
       }
 
-      const plaintext = await bobClient.decrypt_message(
-        msg.senderUuid,
-        msg.senderDeviceId,
+      const aliceAddress = ProtocolAddress.new(msg.senderUuid, msg.senderDeviceId);
+      const bobAddress = ProtocolAddress.new(bobClient.uuid, bobClient.deviceId);
+
+      const plaintext = await decryptMessage(
         msg.ciphertext,
         msg.type,
+        aliceAddress,
+        bobAddress,
+        bobClient.sessionStore,
+        bobClient.identityStore,
+        bobClient.prekeyStore,
+        bobClient.signedPrekeyStore,
+        bobClient.kyberPrekeyStore,
       );
 
-      // Persist Bob's updated session
-      const session = await bobClient.export_session(
-        msg.senderUuid,
-        msg.senderDeviceId,
-      );
+      const session = await bobClient.sessionStore.export_session(aliceAddress);
       if (session) {
         await saveSession({
-          localUuid: bobClient.get_local_uuid(),
+          localUuid: bobClient.uuid,
           remoteUuid: msg.senderUuid,
           remoteDeviceId: msg.senderDeviceId,
           record: session,
@@ -614,26 +681,26 @@ function App() {
     }
   };
 
-  // ----------------------------------------------------------------------
-  // Group Messaging
-  // ----------------------------------------------------------------------
-
   const createGroupSession = async () => {
     if (!client) return;
     try {
-      const groupDistId = "team:general-chat-1"; // Testing arbitrary string ID (mapped to UUID v5 internally)
-      const skdm = await client.create_sender_key_distribution(groupDistId);
+      const groupDistId = "team:general-chat-1";
+      const aliceAddress = ProtocolAddress.new(client.uuid, client.deviceId);
 
-      // Persist Alice's SenderKey state
-      const record = await client.export_sender_key(
-        client.get_local_uuid(),
-        1,
+      const skdm = await createSenderKeyDistribution(
+        aliceAddress,
+        groupDistId,
+        client.senderKeyStore,
+      );
+
+      const record = await client.senderKeyStore.export_sender_key(
+        aliceAddress,
         groupDistId,
       );
       if (record) {
         await saveSenderKey({
-          localUuid: client.get_local_uuid(),
-          remoteUuid: client.get_local_uuid(), // Self
+          localUuid: client.uuid,
+          remoteUuid: client.uuid,
           remoteDeviceId: 1,
           distributionId: groupDistId,
           record,
@@ -643,8 +710,8 @@ function App() {
       log("data", "Created Group Distribution", toHexTruncated(skdm));
       window.__groupDistId = groupDistId;
       window.__lastInfoMessage = {
-        senderUuid: client.get_local_uuid(),
-        senderDeviceId: client.get_local_device_id(),
+        senderUuid: client.uuid,
+        senderDeviceId: client.deviceId,
         distMessage: skdm,
       };
     } catch (e) {
@@ -662,21 +729,20 @@ function App() {
         return;
       }
 
-      await bobClient.process_sender_key_distribution(
-        info.senderUuid,
-        info.senderDeviceId,
+      const aliceAddress = ProtocolAddress.new(info.senderUuid, info.senderDeviceId);
+      await processSenderKeyDistribution(
+        aliceAddress,
         info.distMessage,
+        bobClient.senderKeyStore,
       );
 
-      // Persist Bob's sender key state
-      const record = await bobClient.export_sender_key(
-        info.senderUuid,
-        info.senderDeviceId,
+      const record = await bobClient.senderKeyStore.export_sender_key(
+        aliceAddress,
         groupDistId,
       );
       if (record) {
         await saveSenderKey({
-          localUuid: bobClient.get_local_uuid(),
+          localUuid: bobClient.uuid,
           remoteUuid: info.senderUuid,
           remoteDeviceId: info.senderDeviceId,
           distributionId: groupDistId,
@@ -690,7 +756,7 @@ function App() {
     }
   };
 
-  const encryptGroupMessage = async () => {
+  const encryptGroupMsg = async () => {
     if (!client) return;
     try {
       const groupDistId = window.__groupDistId;
@@ -700,21 +766,23 @@ function App() {
       }
 
       const plaintext = new TextEncoder().encode("Hello Group! 📢");
-      const ciphertext = await client.encrypt_group_message(
+      const aliceAddress = ProtocolAddress.new(client.uuid, client.deviceId);
+
+      const ciphertext = await encryptGroupMessage(
+        aliceAddress,
         groupDistId,
         plaintext,
+        client.senderKeyStore,
       );
 
-      // Persist Alice's updated state (chain advanced)
-      const record = await client.export_sender_key(
-        client.get_local_uuid(),
-        1,
+      const record = await client.senderKeyStore.export_sender_key(
+        aliceAddress,
         groupDistId,
       );
       if (record) {
         await saveSenderKey({
-          localUuid: client.get_local_uuid(),
-          remoteUuid: client.get_local_uuid(),
+          localUuid: client.uuid,
+          remoteUuid: client.uuid,
           remoteDeviceId: 1,
           distributionId: groupDistId,
           record,
@@ -725,7 +793,7 @@ function App() {
 
       window.__lastGroupMessage = {
         ciphertext,
-        senderUuid: client.get_local_uuid(),
+        senderUuid: client.uuid,
         senderDeviceId: 1,
       };
     } catch (e) {
@@ -733,7 +801,7 @@ function App() {
     }
   };
 
-  const decryptGroupMessage = async () => {
+  const decryptGroupMsg = async () => {
     if (!bobClient) return;
     try {
       const msg = window.__lastGroupMessage;
@@ -742,27 +810,25 @@ function App() {
         return;
       }
 
-      const plaintext = await bobClient.decrypt_group_message(
-        msg.senderUuid,
-        msg.senderDeviceId,
+      const aliceAddress = ProtocolAddress.new(msg.senderUuid, msg.senderDeviceId);
+      const plaintext = await decryptGroupMessage(
+        aliceAddress,
         msg.ciphertext,
+        bobClient.senderKeyStore,
       );
 
-      // Persist Bob's state (don't usually need to for decrypt unless loose Ratchet, but good practice)
-      // Note: Sender Keys don't ratchet on decrypt in the same way, but let's be safe.
       const groupDistId = window.__groupDistId;
       if (!groupDistId) {
         log("error", "No group session ID");
         return;
       }
-      const record = await bobClient.export_sender_key(
-        msg.senderUuid,
-        msg.senderDeviceId,
+      const record = await bobClient.senderKeyStore.export_sender_key(
+        aliceAddress,
         groupDistId,
       );
       if (record) {
         await saveSenderKey({
-          localUuid: bobClient.get_local_uuid(),
+          localUuid: bobClient.uuid,
           remoteUuid: msg.senderUuid,
           remoteDeviceId: msg.senderDeviceId,
           distributionId: groupDistId,
@@ -780,8 +846,6 @@ function App() {
     }
   };
 
-  // Clear logs
-  // Reset storage
   const handleReset = async () => {
     if (confirm("Clear all persisted data?")) {
       await clearStorage();
@@ -852,13 +916,13 @@ function App() {
             <button onClick={getIdentityKey} disabled={!client}>
               Identity Key
             </button>
-            <button onClick={() => generatePreKeys()} disabled={!client}>
+            <button onClick={() => handleGeneratePreKeys()} disabled={!client}>
               PreKeys (10)
             </button>
-            <button onClick={() => generateSignedPreKey()} disabled={!client}>
+            <button onClick={() => handleGenerateSignedPreKey()} disabled={!client}>
               Signed PreKey
             </button>
-            <button onClick={() => generateKyberPreKey()} disabled={!client}>
+            <button onClick={() => handleGenerateKyberPreKey()} disabled={!client}>
               Kyber PreKey
             </button>
           </div>
@@ -894,10 +958,10 @@ function App() {
             <button onClick={establishSession} disabled={!client || !bobClient}>
               1. Alice→Bob Session
             </button>
-            <button onClick={encryptMessage} disabled={!client || !bobClient}>
+            <button onClick={encryptMsg} disabled={!client || !bobClient}>
               2. Alice Encrypt
             </button>
-            <button onClick={decryptMessage} disabled={!bobClient}>
+            <button onClick={decryptMsg} disabled={!bobClient}>
               3. Bob Decrypt
             </button>
           </div>
@@ -910,10 +974,10 @@ function App() {
             <button onClick={processGroupSession} disabled={!bobClient}>
               2. Bob Join
             </button>
-            <button onClick={encryptGroupMessage} disabled={!client}>
+            <button onClick={encryptGroupMsg} disabled={!client}>
               3. Alice Send
             </button>
-            <button onClick={decryptGroupMessage} disabled={!bobClient}>
+            <button onClick={decryptGroupMsg} disabled={!bobClient}>
               4. Bob Read
             </button>
           </div>
@@ -947,7 +1011,7 @@ function App() {
       </main>
 
       <footer>
-        <p>libsignal v0.86.11 • WASM • React 19 • Vite • IndexedDB</p>
+        <p>libsignal v0.93.1 • WASM • React 19 • Vite • IndexedDB</p>
       </footer>
     </div>
   );
