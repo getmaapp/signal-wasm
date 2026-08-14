@@ -145,6 +145,9 @@ fn error_code(e: &SignalProtocolError) -> &'static str {
         SignalProtocolError::InvalidKyberPreKeyId => "InvalidKyberPreKeyId",
         SignalProtocolError::InvalidPreKeyId => "InvalidPreKeyId",
         SignalProtocolError::InvalidSignedPreKeyId => "InvalidSignedPreKeyId",
+        SignalProtocolError::SignatureValidationFailed => "SignatureValidationFailed",
+        SignalProtocolError::SessionNotFound(_) => "SessionNotFound",
+        SignalProtocolError::InvalidRegistrationId(_, _) => "InvalidRegistrationId",
         // Kyber anti-replay rejection. The string is wrapper-owned (see
         // REUSED_BASE_KEY_MESSAGE), so this match is exact, not sniffing.
         SignalProtocolError::InvalidMessage(CiphertextMessageType::PreKey, msg)
@@ -198,8 +201,19 @@ fn to_js_error<E: std::fmt::Display>(e: E) -> JsValue {
 }
 
 /// A validation failure raised by the wrapper itself; always coded `Generic`.
+///
+/// Release builds flatten the message to avoid leaking caller-supplied data
+/// (e.g. distribution-id strings) that may appear in validation text.
 fn validation_error(message: &str) -> JsValue {
-    js_error_with_code(message, "Generic")
+    #[cfg(debug_assertions)]
+    {
+        js_error_with_code(&format!("SignalError: {}", message), "Generic")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = message;
+        js_error_with_code("SignalError: Validation failed", "Generic")
+    }
 }
 
 /// Stable machine-readable code for a fingerprint error.
@@ -1109,9 +1123,22 @@ impl WasmSafetyNumber {
 
 #[wasm_bindgen]
 pub struct WasmGroupMasterKey {
-    inner: GroupMasterKey,
     /// Raw master-key bytes — zeroised on drop.
+    ///
+    /// The upstream `GroupMasterKey` is `Copy` and does not implement
+    /// `Zeroize`, so we keep **only** the zeroisable bytes and construct the
+    /// upstream value on demand. This prevents a duplicate, un-zeroisable copy
+    /// of the secret from lingering in the wasm heap after the wrapper is
+    /// dropped.
     bytes: Zeroizing<[u8; GROUP_MASTER_KEY_SIZE]>,
+}
+
+impl WasmGroupMasterKey {
+    /// Construct the upstream `GroupMasterKey` from the zeroised bytes.
+    /// Callers must drop it immediately after use.
+    fn master_key(&self) -> GroupMasterKey {
+        GroupMasterKey::new(*self.bytes)
+    }
 }
 
 #[wasm_bindgen]
@@ -1121,10 +1148,7 @@ impl WasmGroupMasterKey {
         let mut bytes = Zeroizing::new([0u8; GROUP_MASTER_KEY_SIZE]);
         let mut rng = rand::rng();
         rand::prelude::Rng::fill(&mut rng, bytes.as_mut());
-        WasmGroupMasterKey {
-            inner: GroupMasterKey::new(*bytes),
-            bytes,
-        }
+        WasmGroupMasterKey { bytes }
     }
 
     #[wasm_bindgen]
@@ -1132,10 +1156,8 @@ impl WasmGroupMasterKey {
         let array: [u8; GROUP_MASTER_KEY_SIZE] = bytes.try_into().map_err(|_| {
             validation_error(&format!("Invalid key length (must be {} bytes)", GROUP_MASTER_KEY_SIZE))
         })?;
-        let array = Zeroizing::new(array);
         Ok(WasmGroupMasterKey {
-            inner: GroupMasterKey::new(*array),
-            bytes: array,
+            bytes: Zeroizing::new(array),
         })
     }
 
@@ -1147,14 +1169,13 @@ impl WasmGroupMasterKey {
     #[wasm_bindgen]
     pub fn derive_secret_params(&self) -> WasmGroupSecretParams {
         WasmGroupSecretParams {
-            inner: GroupSecretParams::derive_from_master_key(self.inner),
             master_key_bytes: self.bytes.clone(),
         }
     }
 
     #[wasm_bindgen]
     pub fn derive_identifier(&self) -> WasmGroupIdentifier {
-        let params = GroupSecretParams::derive_from_master_key(self.inner);
+        let params = GroupSecretParams::derive_from_master_key(self.master_key());
         WasmGroupIdentifier {
             inner: params.get_group_identifier(),
         }
@@ -1176,9 +1197,21 @@ impl WasmGroupIdentifier {
 
 #[wasm_bindgen]
 pub struct WasmGroupSecretParams {
-    inner: GroupSecretParams,
     /// Raw master-key bytes — zeroised on drop.
+    ///
+    /// The upstream `GroupSecretParams` is `Copy` and does not implement
+    /// `Zeroize`, so we keep **only** the zeroisable master-key bytes and
+    /// derive the full params on demand. This prevents an un-zeroisable copy
+    /// of the expanded secret state from lingering in the wasm heap.
     master_key_bytes: Zeroizing<[u8; GROUP_MASTER_KEY_SIZE]>,
+}
+
+impl WasmGroupSecretParams {
+    /// Derive the upstream `GroupSecretParams` from the zeroised master key.
+    /// Callers must drop it immediately after use.
+    fn secret_params(&self) -> GroupSecretParams {
+        GroupSecretParams::derive_from_master_key(GroupMasterKey::new(*self.master_key_bytes))
+    }
 }
 
 #[wasm_bindgen]
@@ -1194,7 +1227,7 @@ impl WasmGroupSecretParams {
     #[wasm_bindgen]
     pub fn get_identifier(&self) -> WasmGroupIdentifier {
         WasmGroupIdentifier {
-            inner: self.inner.get_group_identifier(),
+            inner: self.secret_params().get_group_identifier(),
         }
     }
 }
@@ -1351,7 +1384,17 @@ pub async fn process_pre_key_bundle(
             let pk = PublicKey::deserialize(&bytes).map_err(to_js_error)?;
             Some((id.into(), pk))
         }
-        _ => None,
+        (None, None) => None,
+        (Some(_), None) => {
+            return Err(validation_error(
+                "prekey_id provided without prekey",
+            ))
+        }
+        (None, Some(_)) => {
+            return Err(validation_error(
+                "prekey provided without prekey_id",
+            ))
+        }
     };
 
     let bundle = PreKeyBundle::new(

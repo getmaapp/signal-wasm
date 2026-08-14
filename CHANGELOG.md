@@ -7,17 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-14
+
+### Security
+- **`WasmGroupMasterKey` / `WasmGroupSecretParams` no longer retain an
+  un-zeroisable upstream copy of the group secret.** Upstream
+  `GroupMasterKey` and `GroupSecretParams` are `Copy` types with no
+  `Zeroize` implementation (`zkgroup` `group_params.rs:21-28`), so the
+  previous wrapper stored a duplicate secret alongside the `Zeroizing`
+  bytes and only zeroised the duplicate. The wrapper now keeps only the
+  `Zeroizing<[u8; 32]>` master-key bytes and derives the upstream value on
+  demand, dropping it immediately after use. This trades a small amount of
+  repeated KDF work for a real reduction in secret retention.
+
+### Added
+- **Stable error codes for canonical protocol variants:**
+  `SignatureValidationFailed`, `SessionNotFound`, `InvalidRegistrationId`
+  (`libsignal` `error.rs:48-78`). These join the existing
+  `NoSenderKeyState`, `DuplicatedMessage`, `UntrustedIdentity`,
+  `InvalidKyberPreKeyId`, `InvalidPreKeyId`, `InvalidSignedPreKeyId`, and
+  `ReusedKyberBaseKey` codes that callers already predicate on.
+
 ### Changed
-- **Exact-pinned all crates.io dependency requirements** (`=x.y.z` on
-  wasm-bindgen, js-sys, web-sys, serde, serde-wasm-bindgen, serde_json,
-  getrandom (both diamond halves), uuid, zeroize, rand, subtle, async-trait,
-  console_error_panic_hook, wasm-bindgen-test). Previously range-pinned
-  (`"0.2"`, `"1.0"` …) while the npm and CocoaPods consumers are
-  exact-pinned; a fresh resolve without `Cargo.lock` could silently pull
-  untested versions of crypto-adjacent crates. Pinned to the versions the
-  committed lockfile already resolves to — `cargo check --locked` verifies
-  byte-identical resolution, so no rebuild or republish is required. The
-  libsignal git rev and curve25519-dalek git tag were already exact.
+- **Release builds now flatten wrapper-raised validation messages.**
+  `validation_error` previously echoed caller-supplied strings (e.g.
+  distribution-id values) even in release, matching the same flattening
+  policy already applied to libsignal errors. Debug builds still include
+  the detailed message.
+- **`processPreKeyBundle` rejects a mismatched one-time prekey pair.**
+  Passing `prekey_id` without `prekey`, or `prekey` without `prekey_id`,
+  now returns a validation error instead of being silently coerced to
+  `None`. A `None/None` pair remains valid (PQXDH signed-prekey-only
+  fallback).
 
 ## [0.6.0] - 2026-08-12
 

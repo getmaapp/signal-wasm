@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "signal-wasm"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "console_error_panic_hook",

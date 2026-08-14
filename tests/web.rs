@@ -1798,6 +1798,102 @@ async fn test_bad_kyber_pre_key_signature() {
     .expect("Good kyber prekey signature must be accepted");
 }
 
+/// Wrapper-level validation: a mismatched one-time prekey pair must be rejected
+/// rather than silently coerced to `None`.
+#[wasm_bindgen_test]
+async fn test_process_pre_key_bundle_rejects_mismatched_prekey_pair() {
+    let alice_uuid = "00000000-0000-0000-0000-00000000000A";
+    let bob_uuid = "00000000-0000-0000-0000-00000000000B";
+
+    let (alice_identity, alice_reg_id) = create_test_identity();
+    let mut alice_session_store = WasmInMemSessionStore::new();
+    let mut alice_identity_store = WasmInMemIdentityKeyStore::new(&alice_identity, alice_reg_id);
+    let alice_address = WasmProtocolAddress::new(alice_uuid.to_string(), 1).unwrap();
+
+    let (bob_identity, bob_reg_id) = create_test_identity();
+    let bob_address = WasmProtocolAddress::new(bob_uuid.to_string(), 1).unwrap();
+    let mut bob_prekey_store = WasmInMemPreKeyStore::new();
+    let mut bob_signed_prekey_store = WasmInMemSignedPreKeyStore::new();
+    let mut bob_kyber_prekey_store = WasmInMemKyberPreKeyStore::new();
+
+    let bob_pre_keys = generate_pre_keys(1, 1, &mut bob_prekey_store)
+        .await
+        .unwrap();
+    let bob_spk = generate_signed_pre_key(1, &bob_identity, &mut bob_signed_prekey_store)
+        .await
+        .unwrap();
+    let bob_kpk = generate_kyber_pre_key(1, &bob_identity, &mut bob_kyber_prekey_store)
+        .await
+        .unwrap();
+
+    let bob_identity_pk =
+        WasmPublicKey::deserialize(&bob_identity.public_key().serialize()).unwrap();
+    let signed_prekey_pk = WasmPublicKey::deserialize(&bob_spk.public_key()).unwrap();
+    let prekey_pk = WasmPublicKey::deserialize(&bob_pre_keys[0].public_key()).unwrap();
+
+    // id without key
+    let result = process_pre_key_bundle(
+        &bob_address,
+        &alice_address,
+        bob_reg_id,
+        &bob_identity_pk,
+        bob_spk.id(),
+        &signed_prekey_pk,
+        &bob_spk.signature(),
+        Some(bob_pre_keys[0].id()),
+        None,
+        bob_kpk.id(),
+        &bob_kpk.public_key(),
+        &bob_kpk.signature(),
+        &mut alice_session_store,
+        &mut alice_identity_store,
+    )
+    .await;
+    assert!(result.is_err(), "prekey_id without prekey must be rejected");
+    assert_eq!(js_error_code(&result.unwrap_err()), "Generic");
+
+    // key without id
+    let result = process_pre_key_bundle(
+        &bob_address,
+        &alice_address,
+        bob_reg_id,
+        &bob_identity_pk,
+        bob_spk.id(),
+        &signed_prekey_pk,
+        &bob_spk.signature(),
+        None,
+        Some(prekey_pk.serialize()),
+        bob_kpk.id(),
+        &bob_kpk.public_key(),
+        &bob_kpk.signature(),
+        &mut alice_session_store,
+        &mut alice_identity_store,
+    )
+    .await;
+    assert!(result.is_err(), "prekey without prekey_id must be rejected");
+    assert_eq!(js_error_code(&result.unwrap_err()), "Generic");
+
+    // Both present still succeeds.
+    process_pre_key_bundle(
+        &bob_address,
+        &alice_address,
+        bob_reg_id,
+        &bob_identity_pk,
+        bob_spk.id(),
+        &signed_prekey_pk,
+        &bob_spk.signature(),
+        Some(bob_pre_keys[0].id()),
+        Some(bob_pre_keys[0].public_key()),
+        bob_kpk.id(),
+        &bob_kpk.public_key(),
+        &bob_kpk.signature(),
+        &mut alice_session_store,
+        &mut alice_identity_store,
+    )
+    .await
+    .expect("matched prekey pair must be accepted");
+}
+
 // ----------------------------------------------------------------------------
 // (d) Straggler decrypt after promote_state
 // ----------------------------------------------------------------------------
