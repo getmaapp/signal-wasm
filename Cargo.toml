@@ -1,6 +1,6 @@
 [package]
 name = "signal-wasm"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2021"
 description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"
 license = "AGPL-3.0-only"

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-08-16
+
+### Fixed
+- `WasmInMemKyberPreKeyStore.remove_kyber_pre_key(id)` now also prunes the
+  evicted key's anti-replay entries from the exported usage set, matching
+  canonical one-time-key deletion semantics. Canonical clients delete a
+  consumed one-time Kyber pre-key and record no `(kyber_id,
+  signed_prekey_id, base_key)` triple for it (Signal-iOS
+  `SignalServiceKit/Axolotl/PreKeyStore.swift:199-225` @ 58cc49ec1;
+  Signal-Desktop `ts/SignalProtocolStore.preload.ts:536-570` @ de8fe1e70;
+  libsignal trait contract `rust/protocol/src/storage/traits.rs:116-138` @
+  b5121d0). A triple for an evicted key is dead weight because a replay fails
+  at `get_kyber_pre_key` (`InvalidKyberPreKeyId`) before the base-key check is
+  ever reached; last-resort records must still not be evicted here so their
+  triples persist.
+
 ## [0.6.4] - 2026-08-15
 
 ### Added

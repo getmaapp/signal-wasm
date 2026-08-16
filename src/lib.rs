@@ -896,18 +896,27 @@ impl WasmInMemKyberPreKeyStore {
     }
 
     /// Evict a Kyber pre-key record from the store. Canonical clients delete a
-    /// ONE-TIME Kyber pre-key the moment it is consumed
-    /// (`KyberPreKeyStore::mark_kyber_pre_key_used` contract,
-    /// `rust/protocol/src/storage/traits.rs:119-136`; Signal-iOS removes the
-    /// row when `preKey.isOneTime`, `PreKeyStore.swift:199-225`) — the trait
-    /// leaves that deletion to the caller, so this primitive is how the
-    /// caller honours it. Without it a consumed one-time KEM secret stays
-    /// decapsulable in-memory until process exit. Last-resort records must
-    /// NOT be evicted here; their replay guard is the usage set above.
+    /// consumed ONE-TIME Kyber pre-key and record NO anti-replay triple for it
+    /// (Signal-iOS removes the row when `preKey.isOneTime`,
+    /// `SignalServiceKit/Axolotl/PreKeyStore.swift:199-225` @ 58cc49ec1;
+    /// Signal-Desktop writes `kyberPreKey_triples` only for last-resort keys,
+    /// `ts/SignalProtocolStore.preload.ts:536-570` @ de8fe1e70; libsignal trait
+    /// contract `rust/protocol/src/storage/traits.rs:116-138` @ b5121d0 leaves
+    /// one-time deletion to the caller). Removing the record also prunes the
+    /// `(kyber_id, signed_prekey_id, base_key)` triples held for that id,
+    /// because a replay against an evicted key fails earlier at
+    /// `get_kyber_pre_key` (`InvalidKyberPreKeyId`) before the base-key check
+    /// is ever reached. Last-resort records must NOT be evicted here; their
+    /// triples must persist so a replay against the live last-resort key is
+    /// still rejected.
     /// Idempotent: returns whether a record was present.
     #[wasm_bindgen]
     pub fn remove_kyber_pre_key(&mut self, id: u32) -> bool {
-        self.0.records.remove(&KyberPreKeyId::from(id)).is_some()
+        let removed = self.0.records.remove(&KyberPreKeyId::from(id)).is_some();
+        if removed {
+            self.0.base_keys_seen.retain(|(kyber_id, _), _| *kyber_id != id);
+        }
+        removed
     }
 }
 

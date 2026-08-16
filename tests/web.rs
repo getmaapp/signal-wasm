@@ -2496,3 +2496,70 @@ async fn test_remove_kyber_pre_key() {
     // Idempotent: a second removal reports absence, not an error.
     assert!(!store.remove_kyber_pre_key(1));
 }
+
+/// 0.6.5: removing a one-time kyber pre-key also prunes its anti-replay
+/// triples. Canonical clients delete a consumed one-time key outright and
+/// record no use-triple for it.
+#[wasm_bindgen_test]
+async fn test_remove_kyber_pre_key_prunes_usage() {
+    let (identity_key_pair, _registration_id) = create_test_identity();
+    let mut store = WasmInMemKyberPreKeyStore::new();
+    let _kpk = generate_kyber_pre_key(1, &identity_key_pair, &mut store)
+        .await
+        .expect("Failed to generate kyber key");
+
+    // Seed a usage triple for kyber id 1.
+    let base_key = WasmPrivateKey::generate()
+        .get_public_key()
+        .expect("Failed to derive base key");
+    let signed_id: u32 = 2;
+    let mut usage = vec![1u8, 0, 0, 0, 1]; // version (1) + count (4 BE)
+    usage.extend_from_slice(&1u32.to_be_bytes()); // kyber id
+    usage.extend_from_slice(&signed_id.to_be_bytes()); // signed prekey id
+    usage.extend_from_slice(&base_key.serialize()); // 33-byte base key
+    store.import_kyber_usage(&usage).expect("Import failed");
+
+    assert_eq!(store.export_kyber_usage().len(), 46);
+    assert!(store.remove_kyber_pre_key(1));
+    // The evicted key's anti-replay entries are pruned.
+    let remaining = store.export_kyber_usage();
+    assert_eq!(remaining.len(), 5);
+    assert_eq!(&remaining[0..5], &[1, 0, 0, 0, 0]);
+}
+
+/// 0.6.5: removing a one-time kyber pre-key leaves last-resort triples intact.
+/// The prune must be keyed by kyber id; triples for a different (last-resort)
+/// id must survive.
+#[wasm_bindgen_test]
+async fn test_remove_kyber_pre_key_keeps_last_resort_usage() {
+    let (identity_key_pair, _registration_id) = create_test_identity();
+    let mut store = WasmInMemKyberPreKeyStore::new();
+    let _one_time = generate_kyber_pre_key(1, &identity_key_pair, &mut store)
+        .await
+        .expect("Failed to generate one-time kyber key");
+    let _last_resort = generate_kyber_pre_key(42, &identity_key_pair, &mut store)
+        .await
+        .expect("Failed to generate last-resort kyber key");
+
+    let base_key = WasmPrivateKey::generate()
+        .get_public_key()
+        .expect("Failed to derive base key");
+    let signed_id: u32 = 2;
+
+    // One triple for the one-time key, one for the last-resort key.
+    let mut usage = vec![1u8, 0, 0, 0, 2]; // version (1) + count (4 BE)
+    usage.extend_from_slice(&1u32.to_be_bytes());
+    usage.extend_from_slice(&signed_id.to_be_bytes());
+    usage.extend_from_slice(&base_key.serialize());
+    usage.extend_from_slice(&42u32.to_be_bytes());
+    usage.extend_from_slice(&signed_id.to_be_bytes());
+    usage.extend_from_slice(&base_key.serialize());
+    store.import_kyber_usage(&usage).expect("Import failed");
+
+    assert_eq!(store.export_kyber_usage().len(), 87); // 5 + 2 * 41
+    assert!(store.remove_kyber_pre_key(1));
+    // The last-resort triple survives eviction of the one-time key.
+    let remaining = store.export_kyber_usage();
+    assert_eq!(remaining.len(), 46); // 5 + 1 * 41
+    assert_eq!(&remaining[5..9], &[0, 0, 0, 42]);
+}
