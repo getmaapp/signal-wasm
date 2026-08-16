@@ -4,11 +4,11 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![WASM](https://img.shields.io/badge/WASM-Ready-green)](https://webassembly.org/)
-[![Version](https://img.shields.io/badge/Version-0.5.0-blue)](Cargo.toml)
+[![Version](https://img.shields.io/badge/Version-0.6.2-blue)](Cargo.toml)
 
 ## Features
 
-- 🔐 **End-to-End Encryption** — Signal Protocol (X3DH + Double Ratchet)
+- 🔐 **End-to-End Encryption** — Signal Protocol (PQXDH + Triple Ratchet)
 - 🛡️ **Post-Quantum Ready** — Kyber1024 (PQXDH) support
 - 👥 **Group Messaging** — Sender Keys and Private Groups (GV2)
 - 🆔 **Flexible Identities** — Any string identifier (Firebase UIDs, usernames, UUIDs)
@@ -110,7 +110,7 @@ const result = await decryptMessage(
 );
 const plaintext2 = result.plaintext;
 
-// 9. Tombstone any one-time keys the decrypt consumed (M27). All id fields
+// 9. Tombstone any one-time keys the decrypt consumed. All id fields
 //    are `undefined` when nothing was consumed (e.g. non-prekey messages).
 if (result.kyberPreKeyId !== undefined) {
   // delete kyber prekey result.kyberPreKeyId from your durable store
@@ -143,7 +143,7 @@ All stores support import/export for IndexedDB persistence.
 | Store | Constructor | Import/Export Methods |
 |-------|-------------|----------------------|
 | `InMemIdentityKeyStore` | `new(identityKeyPair, registrationId)` | — |
-| `InMemSessionStore` | `new()` | `export_session(address)`, `import_session(address, bytes)`, `has_session(address)`, `archive_session(address)` |
+| `InMemSessionStore` | `new()` | `export_session(address)`, `import_session(address, bytes)`, `has_session(address)`, `archive_session(address)`, `delete_session(address)` |
 | `InMemPreKeyStore` | `new()` | `export_pre_key(id)`, `import_pre_key(id, bytes)` |
 | `InMemSignedPreKeyStore` | `new()` | `export_signed_pre_key(id)`, `import_signed_pre_key(id, bytes)` |
 | `InMemKyberPreKeyStore` | `new()` | `export_kyber_pre_key(id)`, `import_kyber_pre_key(id, bytes)`, `export_kyber_usage()`, `import_kyber_usage(bytes)` |
@@ -161,7 +161,7 @@ All stores support import/export for IndexedDB persistence.
 > engine has already seen. Persist it (`export_kyber_usage()` → bytes,
 > `import_kyber_usage(bytes)` at hydration) alongside the kyber records.
 > Without it the replay guard resets on every reload and a replayed
-> PreKeySignalMessage against a live last-resort key decapsulates again (L16).
+> PreKeySignalMessage against a live last-resort key decapsulates again.
 > This matches what Signal's own clients persist (Signal-iOS's
 > `KyberPreKeyUseRecord` table, Signal-Desktop's `kyberPreKey_triples`).
 
@@ -172,7 +172,7 @@ All stores support import/export for IndexedDB persistence.
 | `generatePreKeys(startId, count, store)` | `Promise<WasmPreKey[]>` | Batch-generate one-time PreKeys |
 | `generateSignedPreKey(id, identityKeyPair, store)` | `Promise<WasmSignedPreKey>` | Generate a signed PreKey |
 | `generateKyberPreKey(id, identityKeyPair, store)` | `Promise<WasmKyberPreKey>` | Generate a Kyber PreKey (PQXDH) |
-| `generateRegistrationId()` | `number` | Generate unbiased registration ID (1–16380) |
+| `generateRegistrationId()` | `number` | Generate unbiased registration ID (1–16383) |
 
 ### Protocol Operations
 
@@ -180,7 +180,7 @@ All stores support import/export for IndexedDB persistence.
 |----------|---------|-------------|
 | `processPreKeyBundle(...)` | `Promise<void>` | Establish a session from a PreKey bundle |
 | `encryptMessage(plaintext, recipient, localAddress, sessionStore, identityStore)` | `Promise<WasmCiphertext>` | Encrypt a 1:1 message |
-| `decryptMessage(ciphertext, type, sender, localAddress, sessionStore, identityStore, prekeyStore, signedPrekeyStore, kyberPrekeyStore)` | `Promise<WasmDecryptResult>` | Decrypt a 1:1 message. Result getters: `plaintext` (`Uint8Array`), plus `kyberPreKeyId` / `oneTimePreKeyId` / `signedPreKeyId` — the one-time pre-key ids consumed establishing a new session (`undefined` when none). Tombstone consumed ids in your durable store (M27) |
+| `decryptMessage(ciphertext, type, sender, localAddress, sessionStore, identityStore, prekeyStore, signedPrekeyStore, kyberPrekeyStore)` | `Promise<WasmDecryptResult>` | Decrypt a 1:1 message. Result getters: `plaintext` (`Uint8Array`), plus `kyberPreKeyId` / `oneTimePreKeyId` / `signedPreKeyId` — the one-time pre-key ids consumed establishing a new session (`undefined` when none). Tombstone consumed ids in your durable store |
 | `createSenderKeyDistribution(localAddress, distributionId, senderKeyStore)` | `Promise<Uint8Array>` | Create a sender key distribution message (`distributionId` must be a UUID string) |
 | `processSenderKeyDistribution(senderAddress, distMessage, senderKeyStore)` | `Promise<void>` | Process a sender key distribution message (id read from the message) |
 | `encryptGroupMessage(localAddress, distributionId, plaintext, senderKeyStore)` | `Promise<Uint8Array>` | Encrypt a group message (`distributionId` must be a UUID string) |
@@ -328,8 +328,7 @@ wasm-pack build --target web --scope getmaapp
 Release builds use `panic = "abort"` (there is no unwinding across the WASM
 boundary). A Rust panic therefore **permanently bricks the WASM instance** —
 every subsequent call traps — and surfaces to JS as the flattened
-`SignalError: Operation failed` with no recoverable detail (the M25
-error-flattening residual). A page reload (fresh instance) is the only
+`SignalError: Operation failed` with no recoverable detail. A page reload (fresh instance) is the only
 remedy. Debug builds register `console_error_panic_hook` so panics are
 visible in the console during development.
 

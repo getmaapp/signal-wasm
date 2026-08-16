@@ -7,13 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-08-15
+
+### Added
+- `WasmInMemKyberPreKeyStore.remove_kyber_pre_key(id) -> boolean`: evicts a
+  Kyber pre-key record from the in-memory store. Canonical clients delete a
+  one-time Kyber pre-key the moment it is consumed
+  (`KyberPreKeyStore::mark_kyber_pre_key_used` contract,
+  `rust/protocol/src/storage/traits.rs:119-136`; Signal-iOS removes the row
+  when `preKey.isOneTime`, `PreKeyStore.swift:199-225`); the trait leaves the
+  deletion to the caller, and this primitive is how callers honour it. Until
+  now a consumed one-time KEM secret stayed decapsulable in-memory until
+  process exit. Last-resort records must not be evicted — their replay guard
+  is the exported usage set. Idempotent; returns whether a record was present.
+
+## [0.6.3] - 2026-08-15
+
+### Notes
+- Repackage of 0.6.2 with the complete build: the first 0.6.2 tarball was
+  built from a stale `pkg/` and shipped without
+  `session_remote_registration_id` and the documentation cleanup. 0.6.2 was
+  unpublished; npm does not permit reusing an unpublished version, so the
+  full content ships as 0.6.3. No source changes beyond the version bump.
+
+## [0.6.2] - 2026-08-15
+
+### Added
+- **`InMemSessionStore.delete_session(address)`**: remove the in-memory session
+  record for an address entirely. Canonical libsignal's `SessionStore` trait
+  has no deletion operation (`rust/protocol/src/storage/traits.rs:150-160` @
+  `b5121d0`), so the wrapper implements the public trait over its own map and
+  exposes removal at the bridge. Returns `true` when a record was actually
+  removed.
+- **`InMemSessionStore.session_remote_registration_id(address)`**: read the
+  remote registration id from the active session state. Returns `None` when no
+  record exists or the record has no current state (e.g. after
+  `archive_session`). Canonical Signal-Desktop sends this value in fan-out
+  metadata (`ts/textsecure/OutgoingMessage.preload.ts:537` @ `de8fe1e70`) so
+  Signal-Server's stale-registration check (`MessageSender.java:402-417` @
+  `5eb1a76e9`) can force a session refresh when the recipient re-registers.
+
+### Why
+- Consumers with JS-mediated durable storage need a no-prior-session rollback
+  path: after a first-contact decrypt/encrypt creates a session in the engine
+  but the durable save fails, the engine state is ahead of storage. Deleting
+  the wrapper-owned record lets the retry reprocess the PreKey ciphertext as a
+  first-contact message. `archive_session` is not a substitute — it keeps the
+  record live and rotates the ratchet state into the record's previous-states
+  list so straggler messages still decrypt.
+
+### Consumer impact
+- Consumers can now call `delete_session(address)` with the same
+  `(name, deviceId)` shape as `archive_session`. The return value is `true` if
+  a record existed and was removed, `false` if no record existed. No breaking
+  changes.
+
 ## [0.6.1] - 2026-08-14
 
 ### Security
 - **`WasmGroupMasterKey` / `WasmGroupSecretParams` no longer retain an
   un-zeroisable upstream copy of the group secret.** Upstream
   `GroupMasterKey` and `GroupSecretParams` are `Copy` types with no
-  `Zeroize` implementation (`zkgroup` `group_params.rs:21-28`), so the
+  `Zeroize` implementation
+  (`rust/zkgroup/src/api/groups/group_params.rs:21-28`), so the
   previous wrapper stored a duplicate secret alongside the `Zeroizing`
   bytes and only zeroised the duplicate. The wrapper now keeps only the
   `Zeroizing<[u8; 32]>` master-key bytes and derives the upstream value on
@@ -42,10 +98,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2026-08-12
 
-PQXDH hardening: consumed one-time pre-key surfacing (M27) and durable kyber
-anti-replay memory (L16). Both are parity with Signal's own clients, not extra
+PQXDH hardening: consumed one-time pre-key surfacing and durable kyber
+anti-replay memory. Both are parity with Signal's own clients, not extra
 caution — the `KyberPreKeyStore` trait contract (`libsignal
-rust/protocol/src/storage/traits.rs:127`) requires clients to delete consumed
+rust/protocol/src/storage/traits.rs:129-133`) requires clients to delete consumed
 one-time keys and to reject reused `(kyber, signed prekey, base key)` triples,
 and Signal-iOS / Signal-Desktop / Signal-Android all persist that state in
 their databases. libsignal remains pinned to `main` @
@@ -99,13 +155,14 @@ their databases. libsignal remains pinned to `main` @
   for that base key and never reaches the kyber mark. `ReusedKyberBaseKey`
   fires exactly where `DuplicatedMessage` cannot reach — after a restart or
   session reset with a live last-resort key.
-- The iOS half of both items needs the parallel Swift bridge surface; tracked
-  separately in the Ma E2EE tracker (SIGNAL.md §16a #10).
+- Bridged clients need a matching native surface for both items (e.g. a Swift
+  bridge on iOS); that is downstream consumer work, not part of this engine
+  release.
 
 ## [0.5.0] - 2026-07-25
 
-Engine-side items of the Ma E2EE tracker: canonical cross-perspective
-safety-number verification, identity proof-of-possession, and the M25 hygiene
+This release: canonical cross-perspective
+safety-number verification, identity proof-of-possession, and a hygiene
 sweep. libsignal remains pinned to `main` @
 [`b5121d0`](https://github.com/signalapp/libsignal/commit/b5121d07c72f9e631f178d907ca892587f64f9e2) — no vendored code changed.
 
@@ -129,7 +186,7 @@ sweep. libsignal remains pinned to `main` @
   returns `false` (never throws) for wrong key/message or malformed signature.
 - New error codes **`InvalidPreKeyId`** and **`InvalidSignedPreKeyId`**
   (previously folded into `Generic`).
-- Zeroization (M25a): the previously declared-but-unused `zeroize` dependency
+- Zeroization: the previously declared-but-unused `zeroize` dependency
   is now real. Serialized PreKey/SignedPreKey/KyberPreKey records (which
   contain the private half) and the group master-key bytes in
   `WasmGroupMasterKey` / `WasmGroupSecretParams` are held in
@@ -140,14 +197,14 @@ sweep. libsignal remains pinned to `main` @
 
 ### Changed
 - **BREAKING (minor)**: `WasmGroupSecretParams.serialize` is renamed to
-  **`serialize_master_key`** (L1). It always returned the 32-byte master key,
+  **`serialize_master_key`**. It always returned the 32-byte master key,
   not the 289-byte group params encoding; the explicit name stops future
   callers grabbing the wrong thing. The getter was unreferenced downstream.
 - **BREAKING (minor)**: `log_to_console` is no longer exported from release
-  builds — it is now gated behind `#[cfg(debug_assertions)]` (M25b).
+  builds — it is now gated behind `#[cfg(debug_assertions)]`.
 - `has_session` and the `export_pre_key` / `export_signed_pre_key` /
   `export_kyber_pre_key` stores no longer swallow store errors as
-  falsey/`None` (L4). Only the canonical not-found sentinel
+  falsey/`None`. Only the canonical not-found sentinel
   (`InvalidPreKeyId` / `InvalidSignedPreKeyId` / `InvalidKyberPreKeyId`) maps
   to `None`; any other store error is surfaced as a typed JS `Error`.
 - `verifySafetyNumber` is deprecated (doc comment) in favour of
@@ -155,15 +212,15 @@ sweep. libsignal remains pinned to `main` @
 
 ### Removed
 - Unused direct dependencies `libsignal-core`, `signal-crypto`, and
-  `zkcredential` (M25c). They remain in the tree transitively via
+  `zkcredential`. They remain in the tree transitively via
   `libsignal-protocol` / `zkgroup`, so feature unification is unaffected;
   verified with `cargo check --all-targets`.
 
 ### Notes
 - Release builds keep `panic = "abort"` (correct for wasm: no unwinding across
   the boundary). README now documents that a Rust panic permanently bricks the
-  instance and surfaces as the flattened `SignalError: Operation failed`
-  (the M25 error-flattening residual); `console_error_panic_hook` remains
+  instance and surfaces as the flattened `SignalError: Operation failed`;
+  `console_error_panic_hook` remains
   registered at init in debug builds.
 
 ## [0.4.0] - 2026-07-17
@@ -237,7 +294,7 @@ pinned to `main` @ [`b5121d0`](https://github.com/signalapp/libsignal/commit/b51
 
 ### Changed
 - **libsignal**: Updated all five libsignal dependencies (`libsignal-protocol`, `libsignal-core`, `signal-crypto`, `zkgroup`, `zkcredential`) from tag `v0.93.1` to `main` @ [`b5121d0`](https://github.com/signalapp/libsignal/commit/b5121d07c72f9e631f178d907ca892587f64f9e2) (2026-07-16, upstream workspace version 0.97.4).
-  - Covers ~60 upstream commits, including the session/state/storage refactor (`session.rs` split into `session_management.rs`, `state/`, `storage/`), dynamic `InvalidMessage` error descriptions, removal of `SignalMessage.verifyMac`, the ML-KEM parameter key-type fix, and SPQR integration.
+  - Covers ~60 upstream commits, including the session/state/storage refactor (`rust/protocol/src/session.rs` still exists and contains `PreKeysUsed`; parts also moved to `session_management.rs`, `state/`, and `storage/`), dynamic `InvalidMessage` error descriptions, removal of `SignalMessage.verifyMac`, the ML-KEM parameter key-type fix, and SPQR integration.
   - New transitive dependency: `spqr` v1.5.1 (Sparse Post-Quantum Ratchet), pulled in by `libsignal-protocol`.
   - **No changes to `src/lib.rs` were required** — every libsignal API used by the wrapper remained source-compatible, and the public JavaScript/WASM API is unchanged.
 - **Dependencies**: Bumped all crates within semver-compatible ranges (`cargo update`), notably `wasm-bindgen` 0.2.106 → 0.2.126, `uuid` 1.19 → 1.24, `zeroize` 1.8 → 1.9, `prost` 0.14.3 → 0.14.4, `rand` 0.9.4 → 0.9.5.
@@ -359,7 +416,7 @@ const ciphertext = await encryptMessage(plaintext, recipientAddress, localAddres
 - State persistence for IndexedDB
 - Complete TypeScript definitions
 
-[Unreleased]: https://github.com/getmaapp/signal-wasm/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/getmaapp/signal-wasm/compare/v0.6.2...HEAD
 [0.6.0]: https://github.com/getmaapp/signal-wasm/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/getmaapp/signal-wasm/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/getmaapp/signal-wasm/compare/v0.3.0...v0.4.0
@@ -368,3 +425,8 @@ const ciphertext = await encryptMessage(plaintext, recipientAddress, localAddres
 [0.1.2]: https://github.com/getmaapp/signal-wasm/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/getmaapp/signal-wasm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/getmaapp/signal-wasm/releases/tag/v0.1.0
+
+<!-- [0.6.2] and [0.6.1] compare URLs are omitted: those tags do not exist
+     yet and earlier unreleased versions had no forward refs in the working
+     tree. Add `compare/v0.6.1...v0.6.2` and `compare/v0.6.0...v0.6.1` here
+     once the tags are pushed. -->

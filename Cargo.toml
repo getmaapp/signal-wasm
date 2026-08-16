@@ -1,6 +1,6 @@
 [package]
 name = "signal-wasm"
-version = "0.6.1"
+version = "0.6.4"
 edition = "2021"
 description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"
 license = "AGPL-3.0-only"
@@ -21,11 +21,6 @@ js-sys = "=0.3.103"
 web-sys = { version = "=0.3.103", features = ["console", "Window", "Performance"] }
 console_error_panic_hook = "=0.1.7"
 
-
-# Serialisation
-serde = { version = "=1.0.228", features = ["derive"] }
-serde-wasm-bindgen = "=0.6.5"
-serde_json = { version = "=1.0.150" }
 
 # Core libsignal crates (git dependencies for independent build)
 # Pinned to libsignal main @ b5121d0 (2026-07-16), workspace version 0.97.4.
@@ -60,6 +55,9 @@ async-trait = "=0.1.89"
 
 [dev-dependencies]
 wasm-bindgen-test = "=0.3.76"
+# For PQXDH base-key boundary tests: exact same curve25519-dalek revision the
+# libsignal dependency already uses (see [patch.crates-io]).
+curve25519-dalek = { version = "=4.1.3", features = ["digest"] }
 
 # Security-focused lints (note: cannot use workspace.lints with overrides)
 [lints.rust]

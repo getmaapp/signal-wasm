@@ -8,6 +8,8 @@
 #![cfg(target_arch = "wasm32")]
 
 extern crate wasm_bindgen_test;
+use curve25519_dalek::constants::EIGHT_TORSION;
+use curve25519_dalek::montgomery::MontgomeryPoint;
 use signal_wasm::*;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
@@ -252,6 +254,233 @@ async fn test_session_establishment_and_messaging() {
     assert!(reply_decrypted.kyber_pre_key_id().is_none());
     assert!(reply_decrypted.signed_pre_key_id().is_none());
     assert!(reply_decrypted.one_time_pre_key_id().is_none());
+}
+
+#[wasm_bindgen_test]
+async fn test_delete_session_removes_record() {
+    let mut f = establish_prekey_session(true).await;
+
+    assert!(
+        f.alice_session_store
+            .has_session(&f.bob_address)
+            .await
+            .expect("has_session failed"),
+        "session should exist after processing bundle"
+    );
+
+    let removed = f
+        .alice_session_store
+        .delete_session(&f.bob_address)
+        .await
+        .expect("delete_session failed");
+    assert!(removed, "delete_session should report a removed record");
+
+    assert!(
+        !f.alice_session_store
+            .has_session(&f.bob_address)
+            .await
+            .expect("has_session failed after delete"),
+        "session should be gone after delete"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn test_delete_session_missing_returns_false() {
+    let mut session_store = WasmInMemSessionStore::new();
+    let address = WasmProtocolAddress::new("nobody".to_string(), 1).unwrap();
+
+    let removed = session_store
+        .delete_session(&address)
+        .await
+        .expect("delete_session failed");
+    assert!(
+        !removed,
+        "delete_session on a missing address must return false"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn test_delete_then_reestablish_session_round_trip() {
+    let mut f = establish_prekey_session(true).await;
+
+    // Roll back the freshly created session.
+    let removed = f
+        .alice_session_store
+        .delete_session(&f.bob_address)
+        .await
+        .expect("delete_session failed");
+    assert!(removed, "delete_session should report a removed record");
+
+    // Re-establish with a fresh bundle (new prekey material).
+    let bob_pre_keys_2 = generate_pre_keys(2, 1, &mut f.bob_prekey_store)
+        .await
+        .expect("Failed to generate second prekey batch");
+    let bob_spk_2 = generate_signed_pre_key(2, &f.bob_identity, &mut f.bob_signed_prekey_store)
+        .await
+        .expect("Failed to generate second signed prekey");
+    let bob_kpk_2 = generate_kyber_pre_key(2, &f.bob_identity, &mut f.bob_kyber_prekey_store)
+        .await
+        .expect("Failed to generate second kyber prekey");
+
+    let bob_identity_pk =
+        WasmPublicKey::deserialize(&f.bob_identity.public_key().serialize()).unwrap();
+
+    process_pre_key_bundle(
+        &f.bob_address,
+        &f.alice_address,
+        f.bob_reg_id,
+        &bob_identity_pk,
+        bob_spk_2.id(),
+        &WasmPublicKey::deserialize(&bob_spk_2.public_key()).unwrap(),
+        &bob_spk_2.signature(),
+        Some(bob_pre_keys_2[0].id()),
+        Some(bob_pre_keys_2[0].public_key()),
+        bob_kpk_2.id(),
+        &bob_kpk_2.public_key(),
+        &bob_kpk_2.signature(),
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+    )
+    .await
+    .expect("Re-establishment bundle failed");
+
+    // Round-trip after rollback + re-establishment.
+    let message = b"after rollback";
+    let ciphertext = encrypt_message(
+        message,
+        &f.bob_address,
+        &f.alice_address,
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+    )
+    .await
+    .expect("Encrypt after re-establish failed");
+
+    let decrypted = decrypt_message(
+        &ciphertext.body(),
+        ciphertext.message_type(),
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+        &mut f.bob_prekey_store,
+        &f.bob_signed_prekey_store,
+        &mut f.bob_kyber_prekey_store,
+    )
+    .await
+    .expect("Decrypt after re-establish failed");
+
+    assert_eq!(decrypted.plaintext(), message);
+}
+
+#[wasm_bindgen_test]
+async fn test_session_remote_registration_id_missing_record() {
+    let session_store = WasmInMemSessionStore::new();
+    let address = WasmProtocolAddress::new("nobody".to_string(), 1).unwrap();
+
+    let id = session_store
+        .session_remote_registration_id(&address)
+        .await
+        .expect("session_remote_registration_id failed");
+    assert!(id.is_none(), "missing record must return None");
+}
+
+#[wasm_bindgen_test]
+async fn test_session_remote_registration_id_established_session() {
+    let f = establish_prekey_session(true).await;
+
+    let id = f
+        .alice_session_store
+        .session_remote_registration_id(&f.bob_address)
+        .await
+        .expect("session_remote_registration_id failed");
+    assert_eq!(
+        id,
+        Some(f.bob_reg_id),
+        "established session must expose Bob's registration id"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn test_session_remote_registration_id_archived_returns_none() {
+    let mut f = establish_prekey_session(true).await;
+
+    let id_before = f
+        .alice_session_store
+        .session_remote_registration_id(&f.bob_address)
+        .await
+        .expect("session_remote_registration_id failed before archive");
+    assert!(id_before.is_some(), "current session should carry an id");
+
+    f.alice_session_store
+        .archive_session(&f.bob_address)
+        .await
+        .expect("archive_session failed");
+
+    let id_after = f
+        .alice_session_store
+        .session_remote_registration_id(&f.bob_address)
+        .await
+        .expect("session_remote_registration_id failed after archive");
+    assert!(
+        id_after.is_none(),
+        "archived record with no current state must return None"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn test_session_remote_registration_id_refreshed_after_re_register() {
+    let mut f = establish_prekey_session(true).await;
+
+    f.alice_session_store
+        .archive_session(&f.bob_address)
+        .await
+        .expect("archive_session failed");
+
+    // Bob re-registers with a new registration id and fresh keys.
+    let bob_reg_id_2 = generate_registration_id();
+    let bob_pre_keys_2 = generate_pre_keys(2, 1, &mut f.bob_prekey_store)
+        .await
+        .expect("Failed to generate second prekey batch");
+    let bob_spk_2 = generate_signed_pre_key(2, &f.bob_identity, &mut f.bob_signed_prekey_store)
+        .await
+        .expect("Failed to generate second signed prekey");
+    let bob_kpk_2 = generate_kyber_pre_key(2, &f.bob_identity, &mut f.bob_kyber_prekey_store)
+        .await
+        .expect("Failed to generate second kyber prekey");
+
+    let bob_identity_pk =
+        WasmPublicKey::deserialize(&f.bob_identity.public_key().serialize()).unwrap();
+
+    process_pre_key_bundle(
+        &f.bob_address,
+        &f.alice_address,
+        bob_reg_id_2,
+        &bob_identity_pk,
+        bob_spk_2.id(),
+        &WasmPublicKey::deserialize(&bob_spk_2.public_key()).unwrap(),
+        &bob_spk_2.signature(),
+        Some(bob_pre_keys_2[0].id()),
+        Some(bob_pre_keys_2[0].public_key()),
+        bob_kpk_2.id(),
+        &bob_kpk_2.public_key(),
+        &bob_kpk_2.signature(),
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+    )
+    .await
+    .expect("Re-establishment bundle failed");
+
+    let id = f
+        .alice_session_store
+        .session_remote_registration_id(&f.bob_address)
+        .await
+        .expect("session_remote_registration_id failed after re-register");
+    assert_eq!(
+        id,
+        Some(bob_reg_id_2),
+        "fresh bundle over archived record must expose the new registration id"
+    );
 }
 
 #[wasm_bindgen_test]
@@ -732,7 +961,7 @@ async fn test_safety_numbers() {
 async fn test_registration_id_generation() {
     let reg_id = generate_registration_id();
     assert!(reg_id > 0);
-    assert!(reg_id <= 16380);
+    assert!(reg_id <= 16383);
 }
 
 #[wasm_bindgen_test]
@@ -875,7 +1104,7 @@ async fn test_identity_proof_of_possession() {
 
 #[wasm_bindgen_test]
 async fn test_group_secret_params_master_key_getter() {
-    // L1: the getter is explicitly the 32-byte master key, and it must agree
+    // The getter is explicitly the 32-byte master key, and it must agree
     // with the master key it was derived from.
     let master_key = WasmGroupMasterKey::generate();
     let params = master_key.derive_secret_params();
@@ -885,7 +1114,7 @@ async fn test_group_secret_params_master_key_getter() {
 }
 
 // ============================================================================
-// 0.6.0: consumed pre-key surfacing (M27) + durable kyber anti-replay (L16)
+// 0.6.0: consumed pre-key surfacing + durable kyber anti-replay
 // ============================================================================
 
 /// Shared Alice→Bob fixture. Bob has signed prekey 1 and kyber prekey 1, and
@@ -1010,6 +1239,197 @@ async fn bob_decrypts(
     .await
 }
 
+// ----------------------------------------------------------------------------
+// Protobuf helpers for tampering with a PreKeySignalMessage's `base_key`
+// (field 2, length-delimited bytes) without a full protobuf dependency.
+// ----------------------------------------------------------------------------
+
+fn read_varint(buf: &[u8], pos: &mut usize) -> u64 {
+    let mut result = 0u64;
+    let mut shift = 0u32;
+    loop {
+        assert!(*pos < buf.len(), "truncated varint");
+        let byte = buf[*pos];
+        *pos += 1;
+        result |= ((byte & 0x7f) as u64) << shift;
+        if byte & 0x80 == 0 {
+            return result;
+        }
+        shift += 7;
+        assert!(shift <= 63, "varint overflow");
+    }
+}
+
+fn write_varint(mut value: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(5);
+    while value >= 0x80 {
+        out.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+    out
+}
+
+/// Return the payload of the length-delimited field `field_number`, or `None`
+/// if it is absent.
+fn protobuf_bytes_field(buf: &[u8], field_number: u32) -> Option<Vec<u8>> {
+    let mut pos = 0;
+    while pos < buf.len() {
+        let tag = read_varint(buf, &mut pos) as u32;
+        let wire = tag & 7;
+        let num = tag >> 3;
+        match wire {
+            0 => {
+                read_varint(buf, &mut pos);
+            }
+            2 => {
+                let len = read_varint(buf, &mut pos) as usize;
+                assert!(
+                    pos + len <= buf.len(),
+                    "truncated length-delimited field"
+                );
+                let data = buf[pos..pos + len].to_vec();
+                pos += len;
+                if num == field_number {
+                    return Some(data);
+                }
+            }
+            _ => panic!("unexpected protobuf wire type {}", wire),
+        }
+    }
+    None
+}
+
+/// Re-encode `buf` with the payload of length-delimited field `field_number`
+/// replaced by `new_payload`. All other fields are copied unchanged.
+fn replace_protobuf_bytes_field(buf: &[u8], field_number: u32, new_payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(buf.len());
+    let mut pos = 0;
+    while pos < buf.len() {
+        let tag_start = pos;
+        let tag = read_varint(buf, &mut pos) as u32;
+        let wire = tag & 7;
+        let num = tag >> 3;
+        match wire {
+            0 => {
+                read_varint(buf, &mut pos);
+                out.extend_from_slice(&buf[tag_start..pos]);
+            }
+            2 => {
+                let len = read_varint(buf, &mut pos) as usize;
+                let end = pos + len;
+                assert!(
+                    end <= buf.len(),
+                    "truncated length-delimited field"
+                );
+                if num == field_number {
+                    out.extend_from_slice(&write_varint(tag as u64));
+                    out.extend_from_slice(&write_varint(new_payload.len() as u64));
+                    out.extend_from_slice(new_payload);
+                } else {
+                    out.extend_from_slice(&buf[tag_start..end]);
+                }
+                pos = end;
+            }
+            _ => panic!("unexpected protobuf wire type {}", wire),
+        }
+    }
+    out
+}
+
+// ----------------------------------------------------------------------------
+// PQXDH base-key boundary parity: libsignal @ b5121d0 rejects malformed
+// ephemeral base keys during Bob's session initialisation. Our wasm boundary
+// generates Alice's base key inside `process_pre_key_bundle`, so the malformed
+// key is injected by tampering with the `base_key` field of the resulting
+// PreKeySignalMessage and driving `decrypt_message`.
+// ----------------------------------------------------------------------------
+
+/// Mirrors `test_bob_rejects_highbit_basekey`
+/// (`rust/protocol/tests/ratchet.rs:151-220` @ `b5121d0`).
+#[wasm_bindgen_test]
+async fn test_bob_rejects_highbit_basekey() {
+    let mut f = establish_prekey_session(false).await;
+    let ct = alice_first_message(&mut f, b"high-bit base key").await;
+
+    // Skip the leading ciphertext-version byte; the remainder is the protobuf
+    // PreKeySignalMessage.
+    let proto_body = &ct.body()[1..];
+
+    let mut base_key = protobuf_bytes_field(proto_body, 2)
+        .expect("PreKeySignalMessage must contain base_key");
+    assert_eq!(base_key.len(), 33, "base_key is a type-5 public key");
+
+    // Set the high bit of the Montgomery u-coordinate (the last raw byte after
+    // the leading 0x05 key-type byte), which `PublicKey::is_canonical` rejects
+    // in `scalar_is_in_range`.
+    base_key[32] |= 0b1000_0000_u8;
+
+    let mut tampered = vec![ct.body()[0]];
+    tampered.extend_from_slice(&replace_protobuf_bytes_field(proto_body, 2, &base_key));
+
+    let result = decrypt_message(
+        &tampered,
+        ct.message_type(),
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+        &mut f.bob_prekey_store,
+        &f.bob_signed_prekey_store,
+        &mut f.bob_kyber_prekey_store,
+    )
+    .await;
+    assert!(result.is_err(), "high-bit base key must be rejected");
+}
+
+/// Mirrors `test_bob_rejects_torsioned_basekey`
+/// (`rust/protocol/tests/ratchet.rs:84-150` @ `b5121d0`).
+#[wasm_bindgen_test]
+async fn test_bob_rejects_torsioned_basekey() {
+    let mut f = establish_prekey_session(false).await;
+    let ct = alice_first_message(&mut f, b"torsioned base key").await;
+
+    // Skip the leading ciphertext-version byte; the remainder is the protobuf
+    // PreKeySignalMessage.
+    let proto_body = &ct.body()[1..];
+
+    let base_key = protobuf_bytes_field(proto_body, 2)
+        .expect("PreKeySignalMessage must contain base_key");
+    assert_eq!(base_key.len(), 33, "base_key is a type-5 public key");
+
+    let raw: [u8; 32] = base_key[1..].try_into().unwrap();
+    let mont = MontgomeryPoint(raw);
+    let ed = mont
+        .to_edwards(0)
+        .expect("valid base key maps to an Edwards point");
+    let tweaked = ed + EIGHT_TORSION[1];
+    let tweaked_mont = tweaked.to_montgomery();
+
+    let mut tweaked_key = vec![0x05u8];
+    tweaked_key.extend_from_slice(&tweaked_mont.to_bytes());
+
+    let mut tampered = vec![ct.body()[0]];
+    tampered.extend_from_slice(&replace_protobuf_bytes_field(proto_body, 2, &tweaked_key));
+
+    let result = decrypt_message(
+        &tampered,
+        ct.message_type(),
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+        &mut f.bob_prekey_store,
+        &f.bob_signed_prekey_store,
+        &mut f.bob_kyber_prekey_store,
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "torsioned/non-torsion-free base key must be rejected"
+    );
+}
+
 #[wasm_bindgen_test]
 async fn test_decrypt_reports_consumed_prekey_ids() {
     let mut f = establish_prekey_session(true).await;
@@ -1088,12 +1508,12 @@ async fn test_kyber_usage_export_import_roundtrip() {
     assert!(restored.import_kyber_usage(&bad_key).is_err()); // invalid base key
 }
 
-/// L16: a replayed PreKeySignalMessage against a live last-resort kyber key
+/// A replayed PreKeySignalMessage against a live last-resort kyber key
 /// must still be rejected after a restart — but only if the anti-replay memory
 /// was persisted and re-imported.
 #[wasm_bindgen_test]
 async fn test_kyber_replay_rejected_across_restart() {
-    // Last-resort-only bundle: no one-time EC key, mirroring the M27 fallback
+    // Last-resort-only bundle: no one-time EC key, mirroring the fallback
     // path where one-time keys are exhausted.
     let mut f = establish_prekey_session(false).await;
     let ct = alice_first_message(&mut f, b"last resort").await;
@@ -1184,7 +1604,7 @@ async fn test_kyber_replay_rejected_across_restart() {
 }
 
 // ============================================================================
-// Canonical parity coverage (L25 a-d): ported from libsignal @ b5121d0.
+// Canonical parity coverage: ported from libsignal @ b5121d0.
 //
 // Mappings to canonical tests are documented on each test. Where the wasm API
 // cannot expose an internal value (e.g. alice_base_key), the assertion is
@@ -2056,4 +2476,23 @@ async fn test_straggler_decrypt_after_promote_state() {
     .await
     .expect("Straggler decrypt after promote_state must succeed");
     assert_eq!(received_message_2.plaintext(), b"from Bob 2");
+}
+
+/// 0.6.4: `remove_kyber_pre_key` evicts a consumed one-time record (canonical
+/// one-time deletion on `mark_kyber_pre_key_used`, Signal-iOS
+/// `PreKeyStore.swift:199-225`); idempotent, last-resort records untouched
+/// unless explicitly removed.
+#[wasm_bindgen_test]
+async fn test_remove_kyber_pre_key() {
+    let (identity_key_pair, _registration_id) = create_test_identity();
+    let mut store = WasmInMemKyberPreKeyStore::new();
+    let _kpk = generate_kyber_pre_key(1, &identity_key_pair, &mut store)
+        .await
+        .expect("Failed to generate kyber key");
+
+    assert!(store.export_kyber_pre_key(1).await.unwrap().is_some());
+    assert!(store.remove_kyber_pre_key(1));
+    assert!(store.export_kyber_pre_key(1).await.unwrap().is_none());
+    // Idempotent: a second removal reports absence, not an error.
+    assert!(!store.remove_kyber_pre_key(1));
 }

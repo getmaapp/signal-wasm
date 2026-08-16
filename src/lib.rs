@@ -41,7 +41,6 @@ use libsignal_protocol::{
     IdentityKey,
     IdentityKeyPair,
     InMemIdentityKeyStore,
-    InMemSessionStore,
     InMemSignedPreKeyStore,
     KeyPair,
     KyberPreKeyId,
@@ -77,11 +76,19 @@ const FINGERPRINT_VERSION: u32 = 2;
 /// Signal Protocol fingerprint iteration count.
 const FINGERPRINT_ITERATIONS: u32 = 5200;
 
-/// Maximum valid device ID (Signal convention, though DeviceId allows 1-255).
+/// Maximum valid device ID (Signal convention 1..=127; rust/core/src/address.rs:688-711 @ b5121d0).
 const MAX_DEVICE_ID: u32 = 127;
 
 /// Maximum registration ID value (inclusive).
-const MAX_REGISTRATION_ID: u32 = 16380;
+///
+/// Canonical upper bound is 0x3fff = 16383, used by Signal-iOS
+/// (`RegistrationIdGenerator.swift:15-20` @ `58cc49ec1`) and Signal-Server
+/// (`Device.java:31` MAX_REGISTRATION_ID = 0x3FFF +
+/// `RegistrationIdValidator.java:13` `> 0 && <= 16383` @ `5eb1a76e9`).
+/// Signal-Desktop's `randomInt(1, 16383)` is exclusive on the upper bound,
+/// producing 1..16382 (the odd one out). libsignal-java's legacy
+/// `KeyHelper.generateRegistrationId(false)` used 16380 @ `b5121d0`.
+const MAX_REGISTRATION_ID: u32 = 16383;
 
 /// Maximum number of PreKeys that can be generated in a single batch.
 const MAX_PREKEY_BATCH_SIZE: u32 = 500;
@@ -421,20 +428,65 @@ impl WasmInMemIdentityKeyStore {
     }
 }
 
+/// In-memory session store with record removal.
+///
+/// Upstream `InMemSessionStore` keeps its `sessions` map private and offers no
+/// removal API, and the `SessionStore` trait itself is only `load_session` +
+/// `store_session` (`rust/protocol/src/storage/traits.rs:150-160`,
+/// `rust/protocol/src/storage/inmem.rs:270-322` @ b5121d0). Consumers need to
+/// delete a freshly created session when the durable save fails after a
+/// first-contact decrypt/encrypt (no-prior-session rollback), so
+/// the wrapper implements the public trait over its own map and adds `remove`.
+struct RemovableSessionStore {
+    sessions: HashMap<ProtocolAddress, SessionRecord>,
+}
+
+impl RemovableSessionStore {
+    fn new() -> Self {
+        Self {
+            sessions: HashMap::new(),
+        }
+    }
+
+    /// Delete the record for `address`; `true` if one existed.
+    fn remove(&mut self, address: &ProtocolAddress) -> bool {
+        self.sessions.remove(address).is_some()
+    }
+}
+
+#[async_trait(?Send)]
+impl SessionStore for RemovableSessionStore {
+    async fn load_session(
+        &self,
+        address: &ProtocolAddress,
+    ) -> Result<Option<SessionRecord>, SignalProtocolError> {
+        Ok(self.sessions.get(address).cloned())
+    }
+
+    async fn store_session(
+        &mut self,
+        address: &ProtocolAddress,
+        record: &SessionRecord,
+    ) -> Result<(), SignalProtocolError> {
+        self.sessions.insert(address.clone(), record.clone());
+        Ok(())
+    }
+}
+
 #[wasm_bindgen]
-pub struct WasmInMemSessionStore(InMemSessionStore);
+pub struct WasmInMemSessionStore(RemovableSessionStore);
 
 #[wasm_bindgen]
 impl WasmInMemSessionStore {
     #[wasm_bindgen(constructor)]
     pub fn new() -> WasmInMemSessionStore {
-        WasmInMemSessionStore(InMemSessionStore::new())
+        WasmInMemSessionStore(RemovableSessionStore::new())
     }
 
     #[wasm_bindgen]
     pub async fn has_session(&self, address: &WasmProtocolAddress) -> Result<bool, JsValue> {
         // Store errors are surfaced, not swallowed: a falsey "false" would be
-        // indistinguishable from "no session" (L4).
+        // indistinguishable from "no session".
         let session = self
             .0
             .load_session(&address.0)
@@ -450,6 +502,61 @@ impl WasmInMemSessionStore {
             self.0.store_session(&address.0, &session).await.map_err(signal_error_to_js)?;
         }
         Ok(())
+    }
+
+    /// Delete the session record for `address` entirely.
+    ///
+    /// Canonical libsignal's `SessionStore` trait has no `delete_session`
+    /// (`rust/protocol/src/storage/traits.rs:150-160` @ b5121d0); this removes
+    /// the wrapper-owned in-memory record. Intended for no-prior-session
+    /// rollback after a durable-save failure: a first-contact decrypt/encrypt
+    /// may create a session in the engine while the durable save fails, leaving
+    /// the engine state out of step with storage. Removing the record lets the
+    /// retry reprocess the PreKey ciphertext as a first-contact message.
+    ///
+    /// This is NOT `archive_session` — archive rotates the live ratchet state
+    /// into the record's previous-states list so straggler messages still
+    /// decrypt; delete removes the record completely.
+    ///
+    /// Returns `true` if a record was actually removed. A missing address
+    /// returns `false`.
+    #[wasm_bindgen]
+    pub async fn delete_session(&mut self, address: &WasmProtocolAddress) -> Result<bool, JsValue> {
+        Ok(self.0.remove(&address.0))
+    }
+
+    /// Return the remote registration id stored in the current session state
+    /// for `address`, or `None` when no record exists or the record has no
+    /// current state.
+    ///
+    /// This mirrors the value canonical Signal-Desktop sends in fan-out
+    /// metadata: `OutgoingMessage.preload.ts:537` @ `de8fe1e70` reads
+    /// `sessionCache.getSession(device.id).remoteRegistrationId()` so the
+    /// server's stale-registration check can force a session refresh when the
+    /// recipient re-registers. That check lives in Signal-Server's
+    /// `MessageSender.java:402-417` @ `5eb1a76e9`.
+    ///
+    /// `archive_session` rotates the live ratchet into the record's previous
+    /// states and leaves no current state; libsignal's
+    /// `SessionRecord::session_state()` returns `None` there
+    /// (`rust/protocol/src/state/session.rs:775-780` @ `b5121d0`), and
+    /// `SessionRecord::remote_registration_id()` returns `SessionNotFound`
+    /// (`rust/protocol/src/state/session.rs:847-856` @ `b5121d0`). This
+    /// wrapper maps both "no record" and "no current state" to `Ok(None)` so
+    /// callers can treat an archived record the same as a missing one.
+    #[wasm_bindgen]
+    pub async fn session_remote_registration_id(
+        &self,
+        address: &WasmProtocolAddress,
+    ) -> Result<Option<u32>, JsValue> {
+        match self.0.load_session(&address.0).await.map_err(signal_error_to_js)? {
+            None => Ok(None),
+            Some(record) => match record.remote_registration_id() {
+                Ok(id) => Ok(Some(id)),
+                Err(SignalProtocolError::SessionNotFound(_)) => Ok(None),
+                Err(e) => Err(signal_error_to_js(e)),
+            },
+        }
     }
 
     #[wasm_bindgen]
@@ -551,7 +658,7 @@ impl WasmInMemPreKeyStore {
     #[wasm_bindgen]
     pub async fn export_pre_key(&self, id: u32) -> Result<Option<Vec<u8>>, JsValue> {
         // `InvalidPreKeyId` means "not present" (inmem store convention);
-        // any other store error is surfaced, not swallowed as `None` (L4).
+        // any other store error is surfaced, not swallowed as `None`.
         match self.0.get_pre_key(id.into()).await {
             Ok(record) => Ok(Some(record.serialize().map_err(signal_error_to_js)?)),
             Err(SignalProtocolError::InvalidPreKeyId) => Ok(None),
@@ -611,7 +718,7 @@ impl Default for WasmInMemSignedPreKeyStore {
 /// for a `(kyber id, signed prekey id)` pair fails the decrypt with "reused
 /// base key". That map has no accessor, so with JS-mediated durability it
 /// evaporates on every reload — after a restart a replayed prekey message
-/// against a live last-resort key decapsulates again (L16). Signal's own
+/// against a live last-resort key decapsulates again. Signal's own
 /// clients persist this set: Signal-iOS inserts a `KyberPreKeyUseRecord` into
 /// GRDB and throws on the unique-constraint hit (`PreKeyStore.swift:199`);
 /// Signal-Desktop writes `kyberPreKey_triples` and rejects duplicates
@@ -623,7 +730,7 @@ struct KyberUsageTrackingStore {
     /// (kyber id, signed prekey id) → sender base keys already seen.
     base_keys_seen: HashMap<(u32, u32), Vec<PublicKey>>,
     /// (kyber id, signed prekey id) pairs marked used since the last
-    /// clear/take — surfaced by `decryptMessage` (M27).
+    /// clear/take — surfaced by `decryptMessage`.
     consumed: Vec<(u32, u32)>,
 }
 
@@ -717,8 +824,8 @@ impl KyberPreKeyStore for KyberUsageTrackingStore {
     /// twice for a `(kyber id, signed prekey id)` pair fails the decrypt. The
     /// trait contract leaves one-time-key deletion to the caller ("libsignal
     /// makes no distinction between one-time and last-resort pre-keys",
-    /// `traits.rs:112`) — the TS layer owns that via the consumed id surfaced
-    /// by `decryptMessage`.
+    /// `rust/protocol/src/storage/traits.rs:116`) — the TS layer owns that via
+    /// the consumed id surfaced by `decryptMessage`.
     async fn mark_kyber_pre_key_used(
         &mut self,
         kyber_prekey_id: KyberPreKeyId,
@@ -772,7 +879,7 @@ impl WasmInMemKyberPreKeyStore {
     /// Export the anti-replay memory — the set of `(kyberId, signedPreKeyId,
     /// baseKey)` triples already seen — for durable storage. Persist it
     /// alongside the kyber records and re-import at hydration; without it the
-    /// replay guard resets on every reload (L16). Format: version byte (1),
+    /// replay guard resets on every reload. Format: version byte (1),
     /// u32 BE record count, then per record `kyberId u32 BE || signedPreKeyId
     /// u32 BE || 33-byte compressed base key`.
     #[wasm_bindgen]
@@ -786,6 +893,21 @@ impl WasmInMemKyberPreKeyStore {
     #[wasm_bindgen]
     pub fn import_kyber_usage(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
         self.0.import_usage(bytes)
+    }
+
+    /// Evict a Kyber pre-key record from the store. Canonical clients delete a
+    /// ONE-TIME Kyber pre-key the moment it is consumed
+    /// (`KyberPreKeyStore::mark_kyber_pre_key_used` contract,
+    /// `rust/protocol/src/storage/traits.rs:119-136`; Signal-iOS removes the
+    /// row when `preKey.isOneTime`, `PreKeyStore.swift:199-225`) — the trait
+    /// leaves that deletion to the caller, so this primitive is how the
+    /// caller honours it. Without it a consumed one-time KEM secret stays
+    /// decapsulable in-memory until process exit. Last-resort records must
+    /// NOT be evicted here; their replay guard is the usage set above.
+    /// Idempotent: returns whether a record was present.
+    #[wasm_bindgen]
+    pub fn remove_kyber_pre_key(&mut self, id: u32) -> bool {
+        self.0.records.remove(&KyberPreKeyId::from(id)).is_some()
     }
 }
 
@@ -1054,7 +1176,7 @@ impl WasmCiphertext {
 /// behind the wasm boundary, so the ids are reported here for the TS layer to
 /// tombstone in its durable store; without that, a consumed one-time kyber
 /// record is re-imported on next hydration and its KEM private key is reused
-/// across restarts (M27). All id fields are `undefined` for Whisper
+/// across restarts. All id fields are `undefined` for Whisper
 /// (non-prekey) decrypts and for prekey messages that decrypted against an
 /// existing session. Under concurrent decrypts sharing one store set a caller
 /// may see a superset of its own consumed ids — every reported id was
@@ -1074,8 +1196,11 @@ impl WasmDecryptResult {
         self.plaintext.clone()
     }
 
-    /// The one-time kyber pre-key consumed by this decrypt, if any. Tombstone
-    /// it in the durable store (M27).
+    /// The kyber pre-key consumed by this decrypt (one-time or last-resort),
+    /// if any — the caller knows which ids are one-time. Tombstone it in the
+    /// durable store. libsignal's `mark_kyber_pre_key_used` makes no
+    /// one-time/last-resort distinction
+    /// (rust/protocol/src/storage/traits.rs:129-133 @ b5121d0).
     #[wasm_bindgen(getter, js_name = kyberPreKeyId)]
     pub fn kyber_pre_key_id(&self) -> Option<u32> {
         self.kyber_pre_key_id
@@ -1218,7 +1343,7 @@ impl WasmGroupSecretParams {
 impl WasmGroupSecretParams {
     /// Returns the 32-byte **master key**, not the (289-byte) group secret
     /// params. Named explicitly so no future caller mistakes it for the full
-    /// params encoding (see L1 in the 0.5.0 audit).
+    /// params encoding (see the 0.5.0 CHANGELOG entry).
     #[wasm_bindgen(getter)]
     pub fn serialize_master_key(&self) -> Vec<u8> {
         self.master_key_bytes.to_vec()
@@ -1341,7 +1466,8 @@ pub async fn generate_kyber_pre_key(
     })
 }
 
-/// Generate a registration ID using unbiased rejection sampling (1..=MAX_REGISTRATION_ID).
+/// Generate a registration ID using unbiased rejection sampling over the
+/// canonical inclusive range 1..=16383.
 #[wasm_bindgen(js_name = generateRegistrationId)]
 pub fn generate_registration_id() -> u32 {
     loop {
