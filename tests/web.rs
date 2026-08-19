@@ -2563,3 +2563,209 @@ async fn test_remove_kyber_pre_key_keeps_last_resort_usage() {
     assert_eq!(remaining.len(), 46); // 5 + 1 * 41
     assert_eq!(&remaining[5..9], &[0, 0, 0, 42]);
 }
+
+#[wasm_bindgen_test]
+async fn test_ratchet_key_of_ciphertext_prekey_and_whisper_arms() {
+    let mut f = establish_prekey_session(true).await;
+
+    // PreKey arm: alice's first ciphertext is a PreKeySignalMessage whose
+    // embedded SignalMessage carries her initial ratchet key.
+    let first = encrypt_message(
+        b"retry-test-1",
+        &f.bob_address,
+        &f.alice_address,
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+    )
+    .await
+    .expect("encrypt failed");
+    assert_eq!(first.message_type(), 3); // PreKeyMessage
+    let alice_key = ratchet_key_of_ciphertext(&first.body(), first.message_type())
+        .expect("ratchet key extraction failed")
+        .expect("prekey ciphertext carries a ratchet key");
+    assert_eq!(alice_key.len(), 33); // 0x05 || 32-byte X25519 public key
+
+    // Whisper arm: bob's reply is a plain SignalMessage.
+    decrypt_message(
+        &first.body(),
+        first.message_type(),
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+        &mut f.bob_prekey_store,
+        &f.bob_signed_prekey_store,
+        &mut f.bob_kyber_prekey_store,
+    )
+    .await
+    .expect("bob decrypt failed");
+    let reply = encrypt_message(
+        b"ack",
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+    )
+    .await
+    .expect("reply encrypt failed");
+    assert_eq!(reply.message_type(), 2); // SignalMessage
+    let bob_key = ratchet_key_of_ciphertext(&reply.body(), reply.message_type())
+        .expect("ratchet key extraction failed")
+        .expect("whisper ciphertext carries a ratchet key");
+    assert_eq!(bob_key.len(), 33);
+    // Each direction's header carries its own party's current ratchet key.
+    assert_ne!(alice_key, bob_key);
+}
+
+#[wasm_bindgen_test]
+async fn test_session_current_ratchet_key_matches_lifecycle() {
+    let mut f = establish_prekey_session(true).await;
+
+    let first = encrypt_message(
+        b"m1",
+        &f.bob_address,
+        &f.alice_address,
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+    )
+    .await
+    .expect("encrypt failed");
+    let sent_key = ratchet_key_of_ciphertext(&first.body(), first.message_type())
+        .expect("extraction failed")
+        .expect("ratchet key present");
+
+    // The key alice sent with is still her session's current ratchet key:
+    // this is the sender-side archive-on-match check from
+    // rust/protocol/src/session_management.rs:2266-2286 @ b056faa6d.
+    assert!(
+        f.alice_session_store
+            .session_current_ratchet_key_matches(&f.bob_address, &sent_key)
+            .await
+            .expect("match check failed"),
+        "current ratchet key must match before any ratchet advance"
+    );
+
+    // Bob replies; when alice processes the reply her session ratchets
+    // forward, so the key she sent m1 with stops matching.
+    decrypt_message(
+        &first.body(),
+        first.message_type(),
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+        &mut f.bob_prekey_store,
+        &f.bob_signed_prekey_store,
+        &mut f.bob_kyber_prekey_store,
+    )
+    .await
+    .expect("bob decrypt failed");
+    let reply = encrypt_message(
+        b"ack",
+        &f.alice_address,
+        &f.bob_address,
+        &mut f.bob_session_store,
+        &mut f.bob_identity_store,
+    )
+    .await
+    .expect("reply encrypt failed");
+    decrypt_message(
+        &reply.body(),
+        reply.message_type(),
+        &f.bob_address,
+        &f.alice_address,
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+        &mut WasmInMemPreKeyStore::new(),
+        &WasmInMemSignedPreKeyStore::new(),
+        &mut WasmInMemKyberPreKeyStore::new(),
+    )
+    .await
+    .expect("alice reply decrypt failed");
+    assert!(
+        !f.alice_session_store
+            .session_current_ratchet_key_matches(&f.bob_address, &sent_key)
+            .await
+            .expect("match check failed"),
+        "a superseded ratchet key must not match"
+    );
+
+    // Her new current key (from a fresh ciphertext) does match.
+    let second = encrypt_message(
+        b"m2",
+        &f.bob_address,
+        &f.alice_address,
+        &mut f.alice_session_store,
+        &mut f.alice_identity_store,
+    )
+    .await
+    .expect("encrypt failed");
+    let new_key = ratchet_key_of_ciphertext(&second.body(), second.message_type())
+        .expect("extraction failed")
+        .expect("ratchet key present");
+    assert!(
+        f.alice_session_store
+            .session_current_ratchet_key_matches(&f.bob_address, &new_key)
+            .await
+            .expect("match check failed"),
+        "the post-ratchet key must match"
+    );
+
+    // After archive (the retry-heal action), the record has no current
+    // state: the check reports false rather than erroring.
+    f.alice_session_store
+        .archive_session(&f.bob_address)
+        .await
+        .expect("archive failed");
+    assert!(
+        !f.alice_session_store
+            .session_current_ratchet_key_matches(&f.bob_address, &new_key)
+            .await
+            .expect("match check failed"),
+        "an archived session must not match any key"
+    );
+}
+
+#[wasm_bindgen_test]
+async fn test_ratchet_key_of_ciphertext_sender_key_and_error_arms() {
+    // SenderKey arm returns None without parsing: group messages carry no
+    // Double-Ratchet key (group heal is SKDM re-serve, not archive-on-match).
+    let none = ratchet_key_of_ciphertext(&[0x42, 0x00, 0x01], message_type_sender_key())
+        .expect("sender key arm should not parse or fail");
+    assert!(none.is_none());
+
+    // Plaintext (type 8, CiphertextMessageType::Plaintext @
+    // rust/protocol/src/protocol.rs:39 @ b056faa6d) has no ratchet key.
+    assert!(ratchet_key_of_ciphertext(&[0x01], 8).is_err());
+
+    // Unknown type byte and a corrupt Whisper payload both error.
+    assert!(ratchet_key_of_ciphertext(&[0x01], 0x42).is_err());
+    assert!(ratchet_key_of_ciphertext(&[0x01, 0x02], message_type_signal()).is_err());
+}
+
+#[wasm_bindgen_test]
+async fn test_session_current_ratchet_key_matches_no_session_and_garbage() {
+    let store = WasmInMemSessionStore::new();
+    let (identity, _registration_id) = create_test_identity();
+    let key = identity.public_key().serialize();
+    let addr = WasmProtocolAddress::new("00000000-0000-0000-0000-0000000000CC".to_string(), 1)
+        .expect("address");
+
+    // No record at all reports false, never an error.
+    assert!(
+        !store
+            .session_current_ratchet_key_matches(&addr, &key)
+            .await
+            .expect("match check failed"),
+        "missing session must not match"
+    );
+
+    // Malformed key bytes surface as an error rather than a false negative.
+    assert!(
+        store
+            .session_current_ratchet_key_matches(&addr, &[0x05, 0x00])
+            .await
+            .is_err(),
+        "garbage key bytes must error"
+    );
+}

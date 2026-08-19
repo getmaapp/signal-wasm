@@ -336,7 +336,7 @@ visible in the console during development.
 
 AGPL-3.0 — See [LICENSE](LICENSE)
 
-This package is built on [libsignal](https://github.com/signalapp/libsignal) v0.100.0 (commit [`857c4dca0`](https://github.com/signalapp/libsignal/commit/857c4dca03537dc5e395a5e1eda6bf18f59c3601)) by Signal Technology Foundation.
+This package is built on [libsignal](https://github.com/signalapp/libsignal) v0.101.0 (commit [`b056faa6d`](https://github.com/signalapp/libsignal/commit/b056faa6dd02961cff24064c54c089c52e1a0753)) by Signal Technology Foundation.
 
 ## Disclaimer
 

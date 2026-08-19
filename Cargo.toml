@@ -23,9 +23,9 @@ console_error_panic_hook = "=0.1.7"
 
 
 # Core libsignal crates (git dependencies for independent build)
-# Pinned to libsignal v0.100.0 @ 857c4dca0 (2026-08-19), workspace version 0.100.0.
-libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "857c4dca03537dc5e395a5e1eda6bf18f59c3601" }
-zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "857c4dca03537dc5e395a5e1eda6bf18f59c3601" }
+# Pinned to libsignal v0.101.0 @ b056faa6d (2026-08-19), workspace version 0.101.0.
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "b056faa6dd02961cff24064c54c089c52e1a0753" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "b056faa6dd02961cff24064c54c089c52e1a0753" }
 
 # Randomness for browser (uses Web Crypto API)
 # We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:

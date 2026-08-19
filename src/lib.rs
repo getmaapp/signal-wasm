@@ -573,6 +573,35 @@ impl WasmInMemSessionStore {
         self.0.store_session(&address.0, &session).await.map_err(signal_error_to_js)?;
         Ok(())
     }
+
+    /// Whether the live session for `address` is still on ratchet key
+    /// `key_bytes` — the match half of the sender-side retry-request handler
+    /// (monorepo `docs/signal-retry-request-design.md` R10).
+    ///
+    /// Thin wrap over `SessionRecord::current_ratchet_key_matches`
+    /// (`rust/protocol/src/state/session.rs:950` @ b056faa6d), which compares
+    /// against the current session state's `sender_ratchet_key()` — exactly
+    /// the load → match → archive flow libsignal's own harnesses run before
+    /// re-sending (`rust/protocol/src/session_management.rs:2266-2286`,
+    /// `rust/protocol/test-support/src/lib.rs:368-385` @ b056faa6d). A
+    /// missing record, or a record with no current state, yields `Ok(false)`
+    /// (the upstream method already maps no-current-state to false), so a
+    /// healed or never-established session never matches. Malformed key
+    /// bytes surface as an error rather than a false negative.
+    #[wasm_bindgen]
+    pub async fn session_current_ratchet_key_matches(
+        &self,
+        address: &WasmProtocolAddress,
+        key_bytes: &[u8],
+    ) -> Result<bool, JsValue> {
+        let key = PublicKey::deserialize(key_bytes).map_err(to_js_error)?;
+        match self.0.load_session(&address.0).await.map_err(signal_error_to_js)? {
+            None => Ok(false),
+            Some(record) => record
+                .current_ratchet_key_matches(&key)
+                .map_err(signal_error_to_js),
+        }
+    }
 }
 
 impl Default for WasmInMemSessionStore {
@@ -1942,4 +1971,54 @@ pub fn message_type_pre_key() -> u8 {
 #[wasm_bindgen]
 pub fn message_type_sender_key() -> u8 {
     CiphertextMessageType::SenderKey as u8
+}
+
+/// Extract the sender's ratchet key from a ciphertext, for the receiver
+/// side of the retry-request protocol (monorepo
+/// `docs/signal-retry-request-design.md` R10).
+///
+/// Mirrors the arm logic of `DecryptionErrorMessage::for_original`
+/// (`rust/protocol/src/protocol.rs:888-905` @ b056faa6d): Whisper takes
+/// `SignalMessage::sender_ratchet_key` (protocol.rs:136), PreKey takes the
+/// embedded SignalMessage's ratchet key, SenderKey yields `Ok(None)` (group
+/// messages carry no Double-Ratchet key; group heal is SKDM re-serve, not
+/// archive-on-match), and Plaintext is an error. The key is returned as
+/// `PublicKey::serialize()` bytes (`rust/protocol/src/curve.rs:122` @
+/// b056faa6d); the receiver embeds them in the retry-request control
+/// envelope and the sender matches them with
+/// `WasmInMemSessionStore.session_current_ratchet_key_matches`.
+///
+/// Works on undecryptable ciphertexts by construction: the ratchet key sits
+/// in the unauthenticated header of a SignalMessage, which is why canonical
+/// clients can build a DecryptionErrorMessage for messages that failed
+/// decryption.
+#[wasm_bindgen]
+pub fn ratchet_key_of_ciphertext(
+    bytes: &[u8],
+    message_type: u8,
+) -> Result<Option<Vec<u8>>, JsValue> {
+    let msg_type = CiphertextMessageType::try_from(message_type).map_err(|_| {
+        validation_error(&format!("Unknown message type: {}", message_type))
+    })?;
+    match msg_type {
+        CiphertextMessageType::Whisper => Ok(Some(
+            SignalMessage::try_from(bytes)
+                .map_err(signal_error_to_js)?
+                .sender_ratchet_key()
+                .serialize()
+                .to_vec(),
+        )),
+        CiphertextMessageType::PreKey => Ok(Some(
+            PreKeySignalMessage::try_from(bytes)
+                .map_err(signal_error_to_js)?
+                .message()
+                .sender_ratchet_key()
+                .serialize()
+                .to_vec(),
+        )),
+        CiphertextMessageType::SenderKey => Ok(None),
+        CiphertextMessageType::Plaintext => Err(validation_error(
+            "Plaintext content carries no sender ratchet key",
+        )),
+    }
 }
