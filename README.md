@@ -4,7 +4,7 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![WASM](https://img.shields.io/badge/WASM-Ready-green)](https://webassembly.org/)
-[![Version](https://img.shields.io/badge/Version-0.6.2-blue)](Cargo.toml)
+[![Version](https://img.shields.io/badge/Version-0.6.6-blue)](Cargo.toml)
 
 ## Features
 
@@ -336,7 +336,7 @@ visible in the console during development.
 
 AGPL-3.0 — See [LICENSE](LICENSE)
 
-This package is built on [libsignal](https://github.com/signalapp/libsignal) v0.97.4 (commit [`b5121d0`](https://github.com/signalapp/libsignal/commit/b5121d07c72f9e631f178d907ca892587f64f9e2)) by Signal Technology Foundation.
+This package is built on [libsignal](https://github.com/signalapp/libsignal) v0.100.0 (commit [`857c4dca0`](https://github.com/signalapp/libsignal/commit/857c4dca03537dc5e395a5e1eda6bf18f59c3601)) by Signal Technology Foundation.
 
 ## Disclaimer
 

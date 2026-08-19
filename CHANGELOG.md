@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-08-19
+
+Re-pin to upstream libsignal v0.100.0. No source changes in `src/` or
+`tests/` were required: every API this crate consumes is byte-identical
+between the old and new pins.
+
+### Changed
+- **libsignal re-pin:** `main @ b5121d0` (workspace v0.97.4) →
+  [`857c4dca0`](https://github.com/signalapp/libsignal/commit/857c4dca03537dc5e395a5e1eda6bf18f59c3601)
+  (workspace v0.100.0), for both `libsignal-protocol` and `zkgroup`.
+- **`[patch.crates-io]` curve25519-dalek fork pin removed.** At v0.100.0
+  upstream dropped the `signalapp/curve25519-dalek` 4.1.3 fork and moved to
+  crates-io `curve25519-dalek` **5.0** (`rust/zkgroup/Cargo.toml` @ 857c4dca0:
+  `curve25519-dalek = { workspace = true, features = ["lizard", "serde"] }`;
+  workspace `Cargo.toml:130` @ 857c4dca0). Keeping the old patch would pin
+  4.1.3 against a `5.0` requirement. Dev-dependency moved `=4.1.3` → `=5.0.0`
+  (same release line the workspace now uses; `digest` feature kept for the
+  PQXDH base-key boundary tests).
+- **getrandom diamond comment updated.** The diamond survives
+  (`aes-gcm-siv` 0.11.1 → `rand_core` 0.6 → getrandom 0.2; libsignal crates →
+  `rand` 0.9 / `rand_core` 0.9 → getrandom 0.3), but its membership changed:
+  curve25519-dalek 5.0 uses `rand_core` 0.10 (no getrandom) and uuid 1.24 uses
+  getrandom 0.4 off-wasm / wasm-bindgen directly on wasm32. Both exact pins
+  (`=0.2.17` js, `=0.3.4` wasm_js) remain required for wasm32.
+- Lockfile consequence: `x25519-dalek` 2.0.1 → 3.0.0, `libcrux-ml-kem`
+  0.0.8 → 0.0.10, `spqr` v1.5.1 → v1.5.3, `aes` 0.8 → 0.9, `sha2`/`sha1`
+  0.10 → 0.11, `hmac`/`hkdf` 0.12 → 0.13.
+
+### KEM implementation verdict (PQXDH)
+- **No KEM flip.** PQXDH remains `kem::KeyType::Kyber1024` (wire type byte
+  `0x08`) backed by libcrux's `kyber1024` — the pre-standardisation Kyber
+  variant, not FIPS-203-final ML-KEM. Evidence at the pin:
+  `rust/protocol/src/kem.rs` and `rust/protocol/src/kem/` are byte-identical
+  between b5121d0 and 857c4dca0 (same git blob hashes, including the
+  `kem/test-data` vectors), and `kem/kyber1024.rs` calls
+  `libcrux_ml_kem::kyber1024::{generate_key_pair,encapsulate,decapsulate}` at
+  both pins. The `mlkem1024` module exists but stays behind the off-by-default
+  `mlkem1024` crate feature (`rust/protocol/Cargo.toml:51-56` @ 857c4dca0).
+  The `libcrux-ml-kem` 0.0.8 → 0.0.10 bump does not alter the kyber1024
+  codepath used here. Key/ciphertext sizes unchanged: Kyber1024 pk = 1568
+  (+1 type byte serialised), ct = 1568 — asserted by the passing
+  `test_kyber_pre_key_generation`.
+- **Wire format unchanged between pins:** `rust/protocol/src/proto/wire.proto`
+  diffs empty b5121d0 → 857c4dca0 (the `pq_ratchet` SPQR field already existed
+  at the old pin). Kyber records exported by 0.6.5 import cleanly into 0.6.6.
+
+### `require_pq_ratio` removal (upstream) — no impact here
+- v0.100.0 is the commit that removes `require_pq`/`require_pq_ratio` from
+  `rust/` (857c4dca0, "Remove require_pq_ratio from protocol and bridge";
+  deletes `should_use_nonpq_session` from `rust/protocol/src/protocol.rs`).
+  This crate **never referenced either symbol** (zero grep hits at 0.6.5), so
+  no call sites needed adapting. `process_prekey_bundle`'s signature is
+  identical at both pins (`rust/protocol/src/session.rs:181`).
+- **PQ-required enforcement status:** this crate contains no PQ policy; Ma's
+  PQ-REQUIRED policy is enforced entirely in the monorepo TS layer. That
+  enforcement is unaffected by the re-pin: every session this engine
+  establishes is PQXDH (the kyber pre-key is a mandatory `processPreKeyBundle`
+  argument and its signature is verified unconditionally,
+  `session.rs:208-214` @ 857c4dca0).
+
+### Preserved behaviour
+- The 0.6.4/0.6.5 kyber anti-replay additions (`export_kyber_usage` /
+  `import_kyber_usage`, `remove_kyber_pre_key` pruning) are **not** subsumed
+  by upstream: `KyberPreKeyStore` (`rust/protocol/src/storage/traits.rs`) is
+  byte-identical between pins and still leaves one-time-key deletion and
+  triple-tracking to the caller. Covered by the passing
+  `test_kyber_replay_rejected_across_restart`,
+  `test_kyber_usage_export_import_roundtrip`, `test_remove_kyber_pre_key`,
+  and `test_remove_kyber_pre_key_keeps_last_resort_usage`.
+
+### Verification
+- `cargo build`, `cargo clippy --all-targets` (clean, no warnings),
+  `cargo test` (host: 0 tests, compiles).
+- `wasm-pack test --headless --chrome`: **47 passed, 0 failed**. (Firefox lane
+  not run: no Firefox binary on this machine.)
+- `wasm-pack build --target web --scope getmaapp` → `pkg/`,
+  `pkg/package.json` version 0.6.6.
+
 ## [0.6.5] - 2026-08-16
 
 ### Fixed

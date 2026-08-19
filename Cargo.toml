@@ -1,6 +1,6 @@
 [package]
 name = "signal-wasm"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2021"
 description = "Signal Protocol compiled to WebAssembly for browser-based E2EE messaging"
 license = "AGPL-3.0-only"
@@ -23,16 +23,18 @@ console_error_panic_hook = "=0.1.7"
 
 
 # Core libsignal crates (git dependencies for independent build)
-# Pinned to libsignal main @ b5121d0 (2026-07-16), workspace version 0.97.4.
-libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "b5121d07c72f9e631f178d907ca892587f64f9e2" }
-zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "b5121d07c72f9e631f178d907ca892587f64f9e2" }
+# Pinned to libsignal v0.100.0 @ 857c4dca0 (2026-08-19), workspace version 0.100.0.
+libsignal-protocol = { git = "https://github.com/signalapp/libsignal", rev = "857c4dca03537dc5e395a5e1eda6bf18f59c3601" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", rev = "857c4dca03537dc5e395a5e1eda6bf18f59c3601" }
 
 # Randomness for browser (uses Web Crypto API)
 # We need both v0.2 and v0.3 due to a "diamond dependency" in the upstream libsignal ecosystem:
-# 1. getrandom v0.2 is required by `curve25519-dalek` (v4.1.3) and `aes-gcm-siv` (v0.11.1),
-#    which depend on `rand_core` v0.6.
-# 2. getrandom v0.3 is required by `libsignal-core` and `uuid`, which use `rand` v0.9`.
-# Removing either will cause compilation failures.
+# 1. getrandom v0.2 is required by `aes-gcm-siv` (v0.11.1), which depends on `rand_core` v0.6.
+#    (curve25519-dalek left this side of the diamond at v0.100.0: upstream moved from the
+#    signalapp 4.1.3 fork to crates-io v5.0, which uses `rand_core` v0.10 — no getrandom.)
+# 2. getrandom v0.3 is required by the libsignal crates via `rand` v0.9 / `rand_core` v0.9.
+#    (uuid v1.24 moved on: getrandom v0.4 off-wasm, wasm-bindgen directly on wasm32.)
+# Removing either will cause compilation failures on wasm32.
 getrandom_v02 = { package = "getrandom", version = "=0.2.17", features = ["js"] }
 getrandom = { version = "=0.3.4", features = ["wasm_js"] }
 
@@ -55,9 +57,10 @@ async-trait = "=0.1.89"
 
 [dev-dependencies]
 wasm-bindgen-test = "=0.3.76"
-# For PQXDH base-key boundary tests: exact same curve25519-dalek revision the
-# libsignal dependency already uses (see [patch.crates-io]).
-curve25519-dalek = { version = "=4.1.3", features = ["digest"] }
+# For PQXDH base-key boundary tests: the same curve25519-dalek release line the
+# libsignal v0.100.0 workspace uses (upstream moved from the signalapp 4.1.3
+# fork to crates-io 5.0; the [patch.crates-io] pin was dropped with the re-pin).
+curve25519-dalek = { version = "=5.0.0", features = ["digest"] }
 
 # Security-focused lints (note: cannot use workspace.lints with overrides)
 [lints.rust]
@@ -80,5 +83,3 @@ opt-level = 1
 debug = 2
 panic = "unwind"
 
-[patch.crates-io]
-curve25519-dalek = { git = "https://github.com/signalapp/curve25519-dalek", tag = "signal-curve25519-4.1.3" }
